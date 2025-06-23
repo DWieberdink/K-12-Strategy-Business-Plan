@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 // Set Mapbox access token
-d3.select("svg").attr("width", "100%").attr("height", "100%")
+// d3.select("svg").attr("width", "100%").attr("height", "100%")
 
 // State coordinates for mapping
 const stateCoordinates: { [key: string]: { lat: number; lng: number; name: string } } = {
