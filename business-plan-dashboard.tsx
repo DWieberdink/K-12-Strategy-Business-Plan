@@ -18,6 +18,9 @@ import {
   Cell,
   Legend,
   Brush,
+  PieChart,
+  Pie,
+  Tooltip,
 } from "recharts"
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import * as d3 from 'd3'
@@ -29,6 +32,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
+import Link from 'next/link'
 
 // Set Mapbox access token
 // d3.select("svg").attr("width", "100%").attr("height", "100%")
@@ -1087,7 +1091,24 @@ const MultiSelectDropdown = ({
 }
 
 export default function BusinessPlanDashboard() {
-  const [mainTab, setMainTab] = useState<'financial' | 'strategy'>('financial')
+  // Tab access control (must be first in function)
+  const allTabs = [
+    { key: 'strategy', label: 'Company Strategy' },
+    { key: 'financial', label: 'Financial Overview and Returns' },
+    { key: 'notetaker', label: 'Notetaker' },
+  ]
+  const ADMIN_PASSWORD = '12'
+  const [allowedTabs, setAllowedTabs] = useState<string[]>([])
+  const [userAccess, setUserAccess] = useState<{ [pw: string]: string[] }>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('dashboardUserAccess')
+      if (stored) return JSON.parse(stored)
+    }
+    return { [ADMIN_PASSWORD]: allTabs.map(t => t.key) }
+  })
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  const [mainTab, setMainTab] = useState<'financial' | 'strategy' | 'notetaker'>('financial')
   const [viewType, setViewType] = useState<'charts' | 'expenses' | 'revenue' | 'cashflow' | 'overview'>('charts')
   const [strategyTab, setStrategyTab] = useState<'case' | 'proscons'>('case')
   const [selectedYear, setSelectedYear] = useState(2026)
@@ -1127,6 +1148,34 @@ export default function BusinessPlanDashboard() {
   })
   const [fteBase, setFteBase] = useState(1)
   const [fteGrowth, setFteGrowth] = useState(0.10)
+
+  // Notetaker state
+  const [notes, setNotes] = useState<{ text: string; category: string; timestamp: number }[]>([])
+  const [noteText, setNoteText] = useState('')
+  const [categories, setCategories] = useState<string[]>(['Strategy', 'Financials', 'Decisions'])
+  const [noteCategory, setNoteCategory] = useState('Strategy')
+  const [newCategory, setNewCategory] = useState('')
+  // Add a separate filter state for displaying notes
+  const [noteFilter, setNoteFilter] = useState('All')
+
+  // Persist notes in localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('dashboardNotes')
+    if (stored) {
+      try {
+        setNotes(JSON.parse(stored))
+      } catch {}
+    }
+    const storedCategories = localStorage.getItem('dashboardNoteCategories')
+    if (storedCategories) {
+      try {
+        setCategories(JSON.parse(storedCategories))
+      } catch {}
+    }
+  }, [])
+  useEffect(() => {
+    localStorage.setItem('dashboardNotes', JSON.stringify(notes))
+  }, [notes])
 
   const projectData = useMemo(() => {
     if (isUsingCsvData && csvData.length > 0) {
@@ -1624,17 +1673,45 @@ export default function BusinessPlanDashboard() {
   // Password validation function
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // You can change this password to whatever you want
-    const correctPassword = '12'
-    
-    if (password === correctPassword) {
+    if (password === '12') {
       setIsAuthenticated(true)
       setShowPasswordModal(false)
       setPasswordError('')
+      setAllowedTabs(['strategy', 'financial', 'notetaker'])
+      setIsAdmin(true)
+    } else if (userAccess[password]) {
+      setIsAuthenticated(true)
+      setShowPasswordModal(false)
+      setPasswordError('')
+      setAllowedTabs(userAccess[password])
+      setIsAdmin(false)
     } else {
       setPasswordError('Incorrect password. Please try again.')
       setPassword('')
     }
+  }
+
+  // Admin panel for managing user access
+  const [newUserPw, setNewUserPw] = useState('')
+  const [newUserTabs, setNewUserTabs] = useState<string[]>([])
+  const handleAddUser = () => {
+    if (!newUserPw.trim() || newUserTabs.length === 0) return
+    setUserAccess(prev => {
+      const updated = { ...prev, [newUserPw]: newUserTabs }
+      localStorage.setItem('dashboardUserAccess', JSON.stringify(updated))
+      return updated
+    })
+    setNewUserPw('')
+    setNewUserTabs([])
+  }
+  const handleRemoveUser = (pw: string) => {
+    if (pw === '12') return
+    setUserAccess(prev => {
+      const updated = { ...prev }
+      delete updated[pw]
+      localStorage.setItem('dashboardUserAccess', JSON.stringify(updated))
+      return updated
+    })
   }
 
   // If not authenticated, show password modal
@@ -1687,176 +1764,187 @@ export default function BusinessPlanDashboard() {
 
   return (
     <div className="w-full h-full space-y-4">
-      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as 'financial' | 'strategy')} className="h-full flex flex-col">
-        <TabsList className="grid w-full grid-cols-2 mb-4">
-          <TabsTrigger value="strategy">Company Strategy</TabsTrigger>
-          <TabsTrigger value="financial">Financial Overview and Returns</TabsTrigger>
+      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as 'financial' | 'strategy' | 'notetaker')} className="h-full flex flex-col">
+        <TabsList className="flex w-full mb-4 gap-2 items-center">
+          {allTabs.filter(tab => allowedTabs.includes(tab.key)).map(tab => (
+            <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>
+          ))}
+          {isAdmin && (
+            <div className="ml-auto">
+              <Link href="/admin" passHref legacyBehavior>
+                <a className="inline-block px-4 py-2 border rounded bg-white hover:bg-gray-100 text-sm font-medium text-gray-700 border-gray-300 transition">Admin</a>
+              </Link>
+            </div>
+          )}
         </TabsList>
-        <TabsContent value="strategy">
-          <Tabs value={strategyTab} onValueChange={(value) => setStrategyTab(value as 'case' | 'proscons')} className="h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="case">A Case for...</TabsTrigger>
-              <TabsTrigger value="proscons">Business Model Comparison</TabsTrigger>
-            </TabsList>
-            <TabsContent value="case">
-              <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Pros: ...Becoming Independent? */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...Becoming Independent?</h3>
-                    <div className="mb-2 font-semibold text-green-700">Pros:</div>
-                    <div className="space-y-4 mb-4">
-                      <div>
-                        <div className="font-semibold">Full control over strategy</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Set our own priorities</li>
-                          <li>Make decisions quickly</li>
-                          <li>Align directly with our mission</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Greater financial upside</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Lower overhead</li>
-                          <li>More competitive pricing</li>
-                          <li>Full ownership of profit and equity growth</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Freedom to innovate</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Explore new markets</li>
-                          <li>Test bold ideas</li>
-                          <li>Adapt quickly—without external constraints</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Increased flexibility</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Use the systems, tools, and workflows that best fit our needs</li>
-                          <li>No one-size-fits-all limitations</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Culture on our terms</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Build a team based on our values</li>
-                          <li>Shape a work environment that reflects who we are</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Ownership of brand and identity</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Develop a reputation that's fully ours</li>
-                          <li>Distinct in the market</li>
-                          <li>Aligned with our vision</li>
-                        </ul>
+        {allowedTabs.includes('strategy') && (
+          <TabsContent value="strategy">
+            <Tabs value={strategyTab} onValueChange={(value) => setStrategyTab(value as 'case' | 'proscons')} className="h-full flex flex-col">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="case">A Case for...</TabsTrigger>
+                <TabsTrigger value="proscons">Business Model Comparison</TabsTrigger>
+              </TabsList>
+              <TabsContent value="case">
+                <div className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Pros: ...Becoming Independent? */}
+                    <div className="bg-white rounded-lg shadow p-6 border">
+                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...Becoming Independent?</h3>
+                      <div className="mb-2 font-semibold text-green-700">Pros:</div>
+                      <div className="space-y-4 mb-4">
+                        <div>
+                          <div className="font-semibold">Full control over strategy</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Set our own priorities</li>
+                            <li>Make decisions quickly</li>
+                            <li>Align directly with our mission</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Greater financial upside</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Lower overhead</li>
+                            <li>More competitive pricing</li>
+                            <li>Full ownership of profit and equity growth</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Freedom to innovate</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Explore new markets</li>
+                            <li>Test bold ideas</li>
+                            <li>Adapt quickly—without external constraints</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Increased flexibility</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Use the systems, tools, and workflows that best fit our needs</li>
+                            <li>No one-size-fits-all limitations</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Culture on our terms</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Build a team based on our values</li>
+                            <li>Shape a work environment that reflects who we are</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Ownership of brand and identity</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Develop a reputation that's fully ours</li>
+                            <li>Distinct in the market</li>
+                            <li>Aligned with our vision</li>
+                          </ul>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  {/* Cons: ...not Becoming Independent */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...not Becoming Independent</h3>
-                    <div className="mb-2 font-semibold text-red-700">Cons:</div>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="font-semibold">Higher Financial Risk</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Without shared resources or backing</li>
-                          <li>We assume full responsibility for cash flow, payroll, and liabilities</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Need to Build Infrastructure</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>HR, IT, accounting, legal, insurance</li>
-                          <li>All overhead functions must be set up, maintained, and funded internally or bought</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Resource Gaps at Launch</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Limited access to specialized talent (e.g., sustainability, legal, architecture)</li>
-                          <li>Unless we hire or contract independently</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Slower Ramp-Up Time</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Establishing systems, hiring staff, and building brand recognition takes time and effort</li>
-                          <li>Slowing early momentum</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Administrative Burden on Leadership</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>Time spent on operations may reduce focus on business development</li>
-                          <li>Client relationships</li>
-                          <li>Strategic growth</li>
-                        </ul>
-                      </div>
-                      <div>
-                        <div className="font-semibold">No Safety Net</div>
-                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                          <li>In lean periods or downturns</li>
-                          <li>There's no parent organization to absorb the impact</li>
-                        </ul>
+                    {/* Cons: ...not Becoming Independent */}
+                    <div className="bg-white rounded-lg shadow p-6 border">
+                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...not Becoming Independent</h3>
+                      <div className="mb-2 font-semibold text-red-700">Cons:</div>
+                      <div className="space-y-4">
+                        <div>
+                          <div className="font-semibold">Higher Financial Risk</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Without shared resources or backing</li>
+                            <li>We assume full responsibility for cash flow, payroll, and liabilities</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Need to Build Infrastructure</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>HR, IT, accounting, legal, insurance</li>
+                            <li>All overhead functions must be set up, maintained, and funded internally or bought</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Resource Gaps at Launch</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Limited access to specialized talent (e.g., sustainability, legal, architecture)</li>
+                            <li>Unless we hire or contract independently</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Slower Ramp-Up Time</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Establishing systems, hiring staff, and building brand recognition takes time and effort</li>
+                            <li>Slowing early momentum</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Administrative Burden on Leadership</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>Time spent on operations may reduce focus on business development</li>
+                            <li>Client relationships</li>
+                            <li>Strategic growth</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <div className="font-semibold">No Safety Net</div>
+                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                            <li>In lean periods or downturns</li>
+                            <li>There's no parent organization to absorb the impact</li>
+                          </ul>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </TabsContent>
-            <TabsContent value="proscons">
-              <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Affiliate Model */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Affiliate Model</h3>
-                    <div className="mb-2 font-semibold text-green-700">Pros:</div>
-                    <ul className="list-disc list-inside mb-4 text-sm space-y-1">
-                      <li>Shared overhead expenses (HR, IT, Accounting)</li>
-                      <li>Access to specialized expertise (e.g., Sustainability, Architecture)</li>
-                      <li>Lower financial risk</li>
-                    </ul>
-                    <div className="mb-2 font-semibold text-red-700">Cons:</div>
-                    <ul className="list-disc list-inside text-sm space-y-1">
-                      <li>Limited control over IT systems and infrastructure</li>
-                      <li>Constrained decision-making authority</li>
-                      <li>Lower share of financial upside/reward</li>
-                    </ul>
-                  </div>
-                  {/* Independent Model */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Independent Model</h3>
-                    <div className="mb-2 font-semibold text-green-700">Pros:</div>
-                    <ul className="list-disc list-inside mb-4 text-sm space-y-1">
-                      <li>Full control over business operations and strategy</li>
-                      <li>Maximum flexibility in tools, systems, and staffing</li>
-                      <li>Potential for higher financial rewards</li>
-                    </ul>
-                    <div className="mb-2 font-semibold text-red-700">Cons:</div>
-                    <ul className="list-disc list-inside text-sm space-y-1">
-                      <li>Must build and manage all overhead functions (HR, IT, Accounting)</li>
-                      <li>Greater financial risk and responsibility</li>
-                      <li>Requires investment in building internal capacity from scratch</li>
-                    </ul>
+              </TabsContent>
+              <TabsContent value="proscons">
+                <div className="p-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Affiliate Model */}
+                    <div className="bg-white rounded-lg shadow p-6 border">
+                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Affiliate Model</h3>
+                      <div className="mb-2 font-semibold text-green-700">Pros:</div>
+                      <ul className="list-disc list-inside mb-4 text-sm space-y-1">
+                        <li>Shared overhead expenses (HR, IT, Accounting)</li>
+                        <li>Access to specialized expertise (e.g., Sustainability, Architecture)</li>
+                        <li>Lower financial risk</li>
+                      </ul>
+                      <div className="mb-2 font-semibold text-red-700">Cons:</div>
+                      <ul className="list-disc list-inside text-sm space-y-1">
+                        <li>Limited control over IT systems and infrastructure</li>
+                        <li>Constrained decision-making authority</li>
+                        <li>Lower share of financial upside/reward</li>
+                      </ul>
+                    </div>
+                    {/* Independent Model */}
+                    <div className="bg-white rounded-lg shadow p-6 border">
+                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Independent Model</h3>
+                      <div className="mb-2 font-semibold text-green-700">Pros:</div>
+                      <ul className="list-disc list-inside mb-4 text-sm space-y-1">
+                        <li>Full control over business operations and strategy</li>
+                        <li>Maximum flexibility in tools, systems, and staffing</li>
+                        <li>Potential for higher financial rewards</li>
+                      </ul>
+                      <div className="mb-2 font-semibold text-red-700">Cons:</div>
+                      <ul className="list-disc list-inside text-sm space-y-1">
+                        <li>Must build and manage all overhead functions (HR, IT, Accounting)</li>
+                        <li>Greater financial risk and responsibility</li>
+                        <li>Requires investment in building internal capacity from scratch</li>
+                      </ul>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </TabsContent>
-        <TabsContent value="financial">
-          <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'charts' | 'expenses' | 'revenue' | 'cashflow' | 'overview')} className="h-full flex flex-col">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="charts">Project Performance</TabsTrigger>
-          <TabsTrigger value="expenses">Expenses</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="cashflow">Cash Flow</TabsTrigger>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-        </TabsList>
-            <div className="flex justify-between items-center">
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+        )}
+        {allowedTabs.includes('financial') && (
+          <TabsContent value="financial">
+            <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'charts' | 'expenses' | 'revenue' | 'cashflow' | 'overview')} className="h-full flex flex-col">
+              <TabsList className="grid w-full grid-cols-5">
+                <TabsTrigger value="charts">Project Performance</TabsTrigger>
+                <TabsTrigger value="expenses">Expenses</TabsTrigger>
+                <TabsTrigger value="revenue">Revenue</TabsTrigger>
+                <TabsTrigger value="cashflow">Cash Flow</TabsTrigger>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+              </TabsList>
+              <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
                   <label htmlFor="csv-upload">
@@ -1867,1489 +1955,1642 @@ export default function BusinessPlanDashboard() {
                       </span>
                     </Button>
                   </label>
-          </div>
                 </div>
+              </div>
 
-        <TabsContent value="charts" className="flex-1 overflow-auto space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-primary">{processedData.length}</div>
-                <p className="text-xs text-muted-foreground">Active projects in pipeline</p>
-              </CardContent>
-            </Card>
+              <TabsContent value="charts" className="flex-1 overflow-auto space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-primary">{processedData.length}</div>
+                      <p className="text-xs text-muted-foreground">Active projects in pipeline</p>
+                    </CardContent>
+                  </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Contract Value</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">
-                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / 1000000).toFixed(1)}M
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Combined project value ({processedData.filter(p => p.totalFee > 0).length} with fees)
-                </p>
-                {/* Debug info */}
-                <div className="text-xs text-gray-500 mt-1">
-                  Raw total: ${processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Average Project Size</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">
-                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.totalFee > 0).length || 1) / 1000).toFixed(0)}K
-                </div>
-                <p className="text-xs text-muted-foreground">Mean contract value (excluding $0 fees)</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">States Covered</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-purple-600">
-                  {new Set(processedData.filter(p => p.state && p.state.trim()).map((p) => p.state)).size}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Geographic reach ({processedData.filter(p => !p.state || !p.state.trim()).length} unknown)
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-        
-
-          <div className="flex flex-wrap items-center gap-4 mt-4">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant={chartViewType === "projects" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setChartViewType("projects")}
-                  >
-                    By Project
-                  </Button>
-
-                  <Button
-                    variant={chartViewType === "monthly" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setChartViewType("monthly")}
-                  >
-                    Monthly Revenue
-                  </Button>
-
-                  <Button
-                    variant={chartViewType === "quarterly" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setChartViewType("quarterly")}
-                  >
-                    Quarterly Awards
-                  </Button>
-                  <Button
-                    variant={chartViewType === "growth" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setChartViewType("growth")}
-                  >
-                    Growth Trend
-                  </Button>
-                  <Button
-                    variant={chartViewType === "map" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setChartViewType("map")}
-                  >
-                    <MapPin className="w-4 h-4 mr-2" />
-                    Map View
-                  </Button>
-                </div>
-                </div>
-          <Card>
-            <CardHeader></CardHeader>
-            <CardContent>
-              {chartViewType === "map" && (
-                <div className="flex gap-4">
-                  <div className="flex-1 space-y-4">
-                    <StateMap projects={processedData} onStateClick={handleStateClick} />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Projects by State</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          {mapStateData.slice(0, 6).map((stateData, index) => (
-                            <div
-                              key={index}
-                              className="flex justify-between items-center p-3 bg-muted rounded-lg cursor-pointer hover:bg-muted/80"
-                              onClick={() => handleStateClick(stateData.state)}
-                            >
-                              <div>
-                                <div className="font-medium">
-                                  {stateCoordinates[stateData.state]?.name || stateData.state} ({stateData.state})
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  {stateData.count} project{stateData.count !== 1 ? "s" : ""}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
-                                <div className="text-sm text-muted-foreground">
-                                  ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Practice Areas</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          {practiceAreaData.slice(0, 5).map((areaData, index) => (
-                            <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                              <div>
-                                <div className="font-medium">{areaData.area}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {areaData.count} project{areaData.count !== 1 ? "s" : ""}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-bold">${(areaData.totalValue / 1000).toFixed(0)}K</div>
-                                <div className="text-sm text-muted-foreground">
-                                  ${(areaData.totalValue / areaData.count / 1000).toFixed(0)}K avg
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Project Status</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-3">
-                          {statusData.map((statusItem, index) => (
-                            <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                              <div>
-                                <div className="font-medium">{statusItem.status}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {statusItem.count} project{statusItem.count !== 1 ? "s" : ""}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-bold">${(statusItem.totalValue / 1000).toFixed(0)}K</div>
-                                <div className="text-sm text-muted-foreground">
-                                  ${(statusItem.totalValue / statusItem.count / 1000).toFixed(0)}K avg
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {studioData.length > 1 && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Studio Performance</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {studioData.map((studioItem, index) => (
-                            <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                              <div>
-                                <div className="font-medium">{studioItem.studio}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {studioItem.count} project{studioItem.count !== 1 ? "s" : ""}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-bold">${(studioItem.totalValue / 1000).toFixed(0)}K</div>
-                                <div className="text-sm text-muted-foreground">
-                                  ${(studioItem.totalValue / studioItem.count / 1000).toFixed(0)}K avg
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                  </div>
-                  <div className="w-[200px] space-y-2">
-                    <MultiSelectDropdown
-                      options={states}
-                      selected={filterState}
-                      onChange={setFilterState}
-                      title="States"
-                    />
-                    <MultiSelectDropdown
-                      options={practiceAreas}
-                      selected={filterPracticeArea}
-                      onChange={setFilterPracticeArea}
-                      title="Areas"
-                    />
-                    <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
-                  </div>
-                </div>
-              )}
-
-              {chartViewType === "growth" && growthTrendData.length > 0 && (
-                <div className="mb-4 p-4 bg-muted rounded-lg">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <div className="font-semibold">2023 Starting Value</div>
-                      <div className="text-2xl font-bold text-primary">
-                        ${(growthTrendData[0]?.cumulativeValue / 1000).toFixed(0)}K
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold">Current Value (2025)</div>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Contract Value</CardTitle>
+                    </CardHeader>
+                    <CardContent>
                       <div className="text-2xl font-bold text-green-600">
-                        $
-                        {(
-                          growthTrendData.find((d) => d.year === "2025" && !d.isProjected)?.cumulativeValue / 1000000 ||
-                          growthTrendData[growthTrendData.findIndex((d) => d.isProjected) - 1]?.cumulativeValue /
-                            1000000 ||
-                          0
-                        ).toFixed(1)}
-                        M
+                        ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / 1000000).toFixed(1)}M
                       </div>
-                    </div>
-                    <div>
-                      <div className="font-semibold flex items-center gap-2">Growth Rate (CAGR)
+                      <p className="text-xs text-muted-foreground">
+                        Combined project value ({processedData.filter(p => p.totalFee > 0).length} with fees)
+                      </p>
+                      {/* Debug info */}
+                      <div className="text-xs text-gray-500 mt-1">
+                        Raw total: ${processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Average Project Size</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-blue-600">
+                        ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.totalFee > 0).length || 1) / 1000).toFixed(0)}K
+                      </div>
+                      <p className="text-xs text-muted-foreground">Mean contract value (excluding $0 fees)</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">States Covered</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-purple-600">
+                        {new Set(processedData.filter(p => p.state && p.state.trim()).map((p) => p.state)).size}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Geographic reach ({processedData.filter(p => !p.state || !p.state.trim()).length} unknown)
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-4 mt-4">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant={chartViewType === "projects" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setChartViewType("projects")}
+                    >
+                      By Project
+                    </Button>
+
+                    <Button
+                      variant={chartViewType === "monthly" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setChartViewType("monthly")}
+                    >
+                      Monthly Revenue
+                    </Button>
+
+                    <Button
+                      variant={chartViewType === "quarterly" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setChartViewType("quarterly")}
+                    >
+                      Quarterly Awards
+                    </Button>
+                    <Button
+                      variant={chartViewType === "growth" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setChartViewType("growth")}
+                    >
+                      Growth Trend
+                    </Button>
+                    <Button
+                      variant={chartViewType === "map" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setChartViewType("map")}
+                    >
+                      <MapPin className="w-4 h-4 mr-2" />
+                      Map View
+                    </Button>
+                  </div>
+                </div>
+                <Card>
+                  <CardHeader></CardHeader>
+                  <CardContent>
+                    {chartViewType === "map" && (
+                      <div className="flex gap-4">
+                        <div className="flex-1 space-y-4">
+                          <StateMap projects={processedData} onStateClick={handleStateClick} />
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Projects by State</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-3">
+                                  {mapStateData.slice(0, 6).map((stateData, index) => (
+                                    <div
+                                      key={index}
+                                      className="flex justify-between items-center p-3 bg-muted rounded-lg cursor-pointer hover:bg-muted/80"
+                                      onClick={() => handleStateClick(stateData.state)}
+                                    >
+                                      <div>
+                                        <div className="font-medium">
+                                          {stateCoordinates[stateData.state]?.name || stateData.state} ({stateData.state})
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">
+                                          {stateData.count} project{stateData.count !== 1 ? "s" : ""}
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Practice Areas</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-3">
+                                  {practiceAreaData.slice(0, 5).map((areaData, index) => (
+                                    <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                                      <div>
+                                        <div className="font-medium">{areaData.area}</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          {areaData.count} project{areaData.count !== 1 ? "s" : ""}
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-bold">${(areaData.totalValue / 1000).toFixed(0)}K</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          ${(areaData.totalValue / areaData.count / 1000).toFixed(0)}K avg
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Project Status</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-3">
+                                  {statusData.map((statusItem, index) => (
+                                    <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                                      <div>
+                                        <div className="font-medium">{statusItem.status}</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          {statusItem.count} project{statusItem.count !== 1 ? "s" : ""}
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-bold">${(statusItem.totalValue / 1000).toFixed(0)}K</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          ${(statusItem.totalValue / statusItem.count / 1000).toFixed(0)}K avg
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+
+                          {studioData.length > 1 && (
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Studio Performance</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {studioData.map((studioItem, index) => (
+                                    <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                                      <div>
+                                        <div className="font-medium">{studioItem.studio}</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          {studioItem.count} project{studioItem.count !== 1 ? "s" : ""}
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-bold">${(studioItem.totalValue / 1000).toFixed(0)}K</div>
+                                        <div className="text-sm text-muted-foreground">
+                                          ${(studioItem.totalValue / studioItem.count / 1000).toFixed(0)}K avg
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )}
+                        </div>
+                        <div className="w-[200px] space-y-2">
+                          <MultiSelectDropdown
+                            options={states}
+                            selected={filterState}
+                            onChange={setFilterState}
+                            title="States"
+                          />
+                          <MultiSelectDropdown
+                            options={practiceAreas}
+                            selected={filterPracticeArea}
+                            onChange={setFilterPracticeArea}
+                            title="Areas"
+                          />
+                          <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                        </div>
+                      </div>
+                    )}
+
+                    {chartViewType === "growth" && growthTrendData.length > 0 && (
+                      <div className="mb-4 p-4 bg-muted rounded-lg">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <div className="font-semibold">2023 Starting Value</div>
+                            <div className="text-2xl font-bold text-primary">
+                              ${(growthTrendData[0]?.cumulativeValue / 1000).toFixed(0)}K
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-semibold">Current Value (2025)</div>
+                            <div className="text-2xl font-bold text-green-600">
+                              $
+                              {(
+                                growthTrendData.find((d) => d.year === "2025" && !d.isProjected)?.cumulativeValue / 1000000 ||
+                                growthTrendData[growthTrendData.findIndex((d) => d.isProjected) - 1]?.cumulativeValue /
+                                  1000000 ||
+                                0
+                              ).toFixed(1)}
+                              M
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-semibold flex items-center gap-2">Growth Rate (CAGR)
+                              <input
+                                type="number"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={cagr}
+                                onChange={e => setCagr(Number(e.target.value))}
+                                className="ml-2 w-20 px-2 py-1 border rounded text-sm"
+                              />
+                            </div>
+                            <div className="text-2xl font-bold text-blue-600">{(cagr * 100).toFixed(1)}%</div>
+                          </div>
+                          <div>
+                            <div className="font-semibold">2030 Projection</div>
+                            <div className="text-2xl font-bold text-purple-600">
+                              ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toFixed(1)}M
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {chartViewType !== "growth" && chartViewType !== "map" && <div className="mb-4 p-4 bg-muted rounded-lg" />}
+
+                    {chartViewType === "projects" && (
+                      <>
+                        <div className="flex gap-2 mb-4">
+                          <Button
+                            variant={sortBy === "fee" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                              if (sortBy === "fee") {
+                                setSortReverse(!sortReverse)
+                              } else {
+                                setSortBy("fee")
+                                setSortReverse(false)
+                              }
+                            }}
+                          >
+                            Sort by Fee {sortBy === "fee" && (sortReverse ? "↑" : "↓")}
+                          </Button>
+                          <Button
+                            variant={sortBy === "date" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                              if (sortBy === "date") {
+                                setSortReverse(!sortReverse)
+                              } else {
+                                setSortBy("date")
+                                setSortReverse(false)
+                              }
+                            }}
+                          >
+                            Sort by Date {sortBy === "date" && (sortReverse ? "↑" : "↓")}
+                          </Button>
+                          <Button
+                            variant={sortBy === "name" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                              if (sortBy === "name") {
+                                setSortReverse(!sortReverse)
+                              } else {
+                                setSortBy("name")
+                                setSortReverse(false)
+                              }
+                            }}
+                          >
+                            Sort by Name {sortBy === "name" && (sortReverse ? "↑" : "↓")}
+                          </Button>
+                        </div>
+                        <div className="flex gap-4">
+                          <ChartContainer
+                            config={{
+                              fee: {
+                                label: "Project Fee",
+                                color: "hsl(var(--chart-1))",
+                              },
+                            }}
+                            className="h-[600px]"
+                          >
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={processedData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="shortName" angle={-45} textAnchor="end" height={120} fontSize={12} />
+                                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
+                                <ChartTooltip
+                                  content={({ active, payload, label }) => {
+                                    if (active && payload && payload.length) {
+                                      const data = payload[0].payload
+                                      return (
+                                        <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                          <p className="font-semibold">{data.name}</p>
+                                          <p className="text-sm text-muted-foreground">State: {data.state}</p>
+                                          <p className="text-sm text-muted-foreground">Start: {data.startDate}</p>
+                                          <p className="text-sm text-muted-foreground">End: {data.endDate}</p>
+                                          <p className="text-sm text-muted-foreground">Status: {data.projectStatus}</p>
+                                          <p className="text-lg font-bold text-primary">${data.totalFee.toLocaleString()}</p>
+                                        </div>
+                                      )
+                                    }
+                                    return null
+                                  }}
+                                />
+                                <Bar dataKey="totalFee" radius={[4, 4, 0, 0]}>
+                                  {processedData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.statusColor} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </ChartContainer>
+                          <div className="w-[200px] space-y-2">
+                            <MultiSelectDropdown
+                              options={states}
+                              selected={filterState}
+                              onChange={setFilterState}
+                              title="States"
+                            />
+                            <MultiSelectDropdown
+                              options={practiceAreas}
+                              selected={filterPracticeArea}
+                              onChange={setFilterPracticeArea}
+                              title="Areas"
+                            />
+                            <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {chartViewType === "monthly" && (
+                      <div className="flex gap-4">
+                        <div>
+                        <div className="flex justify-end mb-2">
+                          <Button variant="outline" size="sm" onClick={() => setShowMonthlyExpenses(!showMonthlyExpenses)}>
+                            {showMonthlyExpenses ? "Hide" : "Show"} Expenses
+                          </Button>
+                        </div>
+                        <ChartContainer
+                          config={{
+                            revenue: {
+                              label: "Monthly Revenue",
+                              color: "hsl(var(--chart-3))",
+                            },
+                            expense: {
+                              label: "Monthly Expense",
+                              color: "hsl(var(--chart-5))",
+                            },
+                          }}
+                          className="h-[500px]"
+                        >
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={combinedMonthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="month" fontSize={12} angle={-45} textAnchor="end" height={80} />
+                              <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
+                              <ChartTooltip
+                                content={({ active, payload, label }) => {
+                                  if (active && payload && payload.length) {
+                                    const data = payload[0].payload
+                                    return (
+                                      <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
+                                        <p className="font-semibold">{data.month}</p>
+                                        <p className="text-lg font-bold text-primary">
+                                          Revenue: ${data.revenue.toLocaleString()}
+                                        </p>
+                                        {showMonthlyExpenses && (
+                                          <p className="text-lg font-bold text-red-500">
+                                            Expense: ${data.expense.toLocaleString()}
+                                          </p>
+                                        )}
+                                        <p className="text-sm text-muted-foreground mt-2">
+                                          Active Projects ({data.projects.length}):
+                                        </p>
+                                        <ul className="text-xs text-muted-foreground mt-1 space-y-1">
+                                          {data.projects.slice(0, 3).map((project: string, idx: number) => (
+                                            <li key={idx} className="truncate">
+                                              • {project.length > 25 ? project.substring(0, 25) + "..." : project}
+                                            </li>
+                                          ))}
+                                          {data.projects.length > 3 && (
+                                            <li className="text-xs">... and {data.projects.length - 3} more</li>
+                                          )}
+                                        </ul>
+                                      </div>
+                                    )
+                                  }
+                                  return null
+                                }}
+                              />
+                              <Legend />
+                              <Line
+                                type="monotone"
+                                dataKey="revenue"
+                                stroke="var(--color-revenue)"
+                                strokeWidth={3}
+                                dot={{ r: 2, fill: 'var(--color-revenue)', stroke: 'var(--color-revenue)' }}
+                              />
+                              {showMonthlyExpenses && (
+                                <Line
+                                  type="monotone"
+                                  dataKey="expense"
+                                  stroke="var(--color-expense)"
+                                  strokeWidth={2}
+                                  strokeDasharray="5 5"
+                                  dot={{ r: 2, fill: 'var(--color-expense)', stroke: 'var(--color-expense)' }}
+                                />
+                              )}
+                              <Brush dataKey="month" height={30} stroke="hsl(var(--chart-3))" />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </ChartContainer>
+                        </div>
+                        <div className="w-[200px] space-y-2 self-center">
+                          <MultiSelectDropdown
+                            options={states}
+                            selected={filterState}
+                            onChange={setFilterState}
+                            title="States"
+                          />
+                          <MultiSelectDropdown
+                            options={practiceAreas}
+                            selected={filterPracticeArea}
+                            onChange={setFilterPracticeArea}
+                            title="Areas"
+                          />
+                          <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                        </div>
+                      </div>
+                    )}
+
+                    {chartViewType === "quarterly" && (
+                      <div className="flex gap-4">
+                      <ChartContainer
+                        config={{
+                          value: {
+                            label: "Contract Value",
+                            color: "hsl(var(--chart-2))",
+                          },
+                        }}
+                        className="h-[400px]"
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={quarterlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="quarter" fontSize={12} />
+                            <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                            <ChartTooltip
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload
+                                  return (
+                                    <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
+                                      <p className="font-semibold">{data.quarter}</p>
+                                      <p className="text-lg font-bold text-primary">${data.value.toLocaleString()}</p>
+                                      <p className="text-sm text-muted-foreground mt-2">Projects ({data.projects.length}):</p>
+                                      <ul className="text-xs text-muted-foreground mt-1 space-y-1">
+                                        {data.projects.map((project: string, idx: number) => (
+                                          <li key={idx} className="truncate">
+                                            • {project.length > 30 ? project.substring(0, 30) + "..." : project}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )
+                                }
+                                return null
+                              }}
+                            />
+                            <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartContainer>
+                        <div className="w-[200px] space-y-2 self-center">
+                          <MultiSelectDropdown
+                            options={states}
+                            selected={filterState}
+                            onChange={setFilterState}
+                            title="States"
+                          />
+                          <MultiSelectDropdown
+                            options={practiceAreas}
+                            selected={filterPracticeArea}
+                            onChange={setFilterPracticeArea}
+                            title="Areas"
+                          />
+                          <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                        </div>
+                      </div>
+                    )}
+
+                    {chartViewType === "growth" && (
+                      <div className="flex gap-4">
+                      <ChartContainer
+                        config={{
+                          cumulativeValue: {
+                            label: "Cumulative Value",
+                            color: "hsl(var(--chart-4))",
+                          },
+                          projected: {
+                            label: "Projected Value",
+                            color: "hsl(var(--chart-5))",
+                          },
+                        }}
+                        className="h-[500px]"
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={growthTrendData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="year" fontSize={12} />
+                            <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                            <ChartTooltip
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload
+                                  const isProjected = data.isProjected
+                                  return (
+                                    <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
+                                      <p className="font-semibold">
+                                        {data.year} {isProjected && "(Projected)"}
+                                      </p>
+                                      <p className="text-lg font-bold text-primary">
+                                        ${data.cumulativeValue.toLocaleString()}
+                                      </p>
+                                      {!isProjected && data.yearlyValue > 0 && (
+                                        <p className="text-sm text-muted-foreground">
+                                          New contracts: ${data.yearlyValue.toLocaleString()}
+                                        </p>
+                                      )}
+                                      {isProjected && data.growthRate && (
+                                        <p className="text-sm text-muted-foreground">
+                                          Growth rate: {(data.growthRate * 100).toFixed(1)}% CAGR
+                                        </p>
+                                      )}
+                                      {!isProjected && data.projects && data.projects.length > 0 && (
+                                        <>
+                                          <p className="text-sm text-muted-foreground mt-2">
+                                            Projects ({data.projects.length}):
+                                          </p>
+                                          <ul className="text-xs text-muted-foreground mt-1 space-y-1">
+                                            {data.projects.slice(0, 3).map((project: string, idx: number) => (
+                                              <li key={idx} className="truncate">
+                                                • {project.length > 25 ? project.substring(0, 25) + "..." : project}
+                                              </li>
+                                            ))}
+                                            {data.projects.length > 3 && (
+                                              <li className="text-xs">... and {data.projects.length - 3} more</li>
+                                            )}
+                                          </ul>
+                                        </>
+                                      )}
+                                    </div>
+                                  )
+                                }
+                                return null
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="cumulativeValue"
+                              stroke="var(--color-cumulativeValue)"
+                              strokeWidth={3}
+                              dot={(props) => {
+                                const { payload } = props
+                                return (
+                                  <circle
+                                      key={payload.year}
+                                    cx={props.cx}
+                                    cy={props.cy}
+                                    r={payload?.isProjected ? 3 : 5}
+                                    fill={payload?.isProjected ? "hsl(var(--chart-5))" : "var(--color-cumulativeValue)"}
+                                    strokeWidth={payload?.isProjected ? 2 : 0}
+                                    stroke={payload?.isProjected ? "var(--color-cumulativeValue)" : "none"}
+                                    strokeDasharray={payload?.isProjected ? "4,4" : "none"}
+                                  />
+                                )
+                              }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </ChartContainer>
+                        <div className="w-[200px] space-y-2 self-center">
+                          <MultiSelectDropdown
+                            options={states}
+                            selected={filterState}
+                            onChange={setFilterState}
+                            title="States"
+                          />
+                          <MultiSelectDropdown
+                            options={practiceAreas}
+                            selected={filterPracticeArea}
+                            onChange={setFilterPracticeArea}
+                            title="Areas"
+                          />
+                          <MultiSelectDropdown
+                            options={statuses}
+                            selected={filterStatus}
+                            onChange={setFilterStatus}
+                            title="Statuses"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {(chartViewType === "projects") && (
+                      <div className="mt-4 flex items-center justify-center gap-6 text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 bg-orange-500 rounded"></div>
+                          <span>Not Started</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                          <span>In Progress</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 bg-green-500 rounded"></div>
+                          <span>Completed</span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="expenses" className="flex-1 overflow-auto space-y-4">
+                {/* FTE Mode Toggle and Inputs (moved from Revenue) */}
+                <div className="mb-4 flex flex-col md:flex-row md:items-center md:gap-6 gap-2 p-4 bg-muted rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">FTE Mode:</span>
+                    <Button
+                      variant={fteMode === 'manual' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFteMode('manual')}
+                    >
+                      Manual
+                    </Button>
+                    <Button
+                      variant={fteMode === 'growth' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFteMode('growth')}
+                    >
+                      Growth Rate
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-4 flex-wrap mt-2 md:mt-0">
+                    <span className="text-xs font-medium">Year:</span>
+                    {projectionYears.map((year) => (
+                      <Button
+                        key={year}
+                        variant={selectedYear === year ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSelectedYear(year)}
+                      >
+                        {year}
+                      </Button>
+                    ))}
+                    {fteMode === 'manual' ? (
+                      <React.Fragment>
+                        <span className="text-xs font-medium">FTEs per year:</span>
+                        {projectionYears.map((year) => (
+                          <div key={year} className="flex flex-col items-center">
+                            <span className="text-xs text-muted-foreground">{year}</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={manualFTEs[year] || 1}
+                              onChange={e => setManualFTEs({ ...manualFTEs, [year]: Number(e.target.value) })}
+                              className="w-16 px-2 py-1 border rounded text-sm text-center"
+                            />
+                          </div>
+                        ))}
+                      </React.Fragment>
+                    ) : (
+                      <React.Fragment>
+                        <span className="text-xs font-medium">Base FTE:</span>
                         <input
                           type="number"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={cagr}
-                          onChange={e => setCagr(Number(e.target.value))}
-                          className="ml-2 w-20 px-2 py-1 border rounded text-sm"
+                          min="1"
+                          max="100"
+                          value={fteBase}
+                          onChange={e => setFteBase(Number(e.target.value))}
+                          className="w-16 px-2 py-1 border rounded text-sm text-center"
                         />
-                      </div>
-                      <div className="text-2xl font-bold text-blue-600">{(cagr * 100).toFixed(1)}%</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold">2030 Projection</div>
-                      <div className="text-2xl font-bold text-purple-600">
-                        ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toFixed(1)}M
-                      </div>
-                    </div>
+                        <span className="text-xs font-medium">Growth Rate (%/yr):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={(fteGrowth * 100).toFixed(2)}
+                          onChange={e => setFteGrowth(Number(e.target.value) / 100)}
+                          className="w-20 px-2 py-1 border rounded text-sm text-center"
+                        />
+                      </React.Fragment>
+                    )}
                   </div>
                 </div>
-              )}
-
-              {chartViewType !== "growth" && chartViewType !== "map" && <div className="mb-4 p-4 bg-muted rounded-lg" />}
-
-              {chartViewType === "projects" && (
-                <>
-                  <div className="flex gap-2 mb-4">
-                    <Button
-                      variant={sortBy === "fee" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        if (sortBy === "fee") {
-                          setSortReverse(!sortReverse)
-                        } else {
-                          setSortBy("fee")
-                          setSortReverse(false)
-                        }
-                      }}
-                    >
-                      Sort by Fee {sortBy === "fee" && (sortReverse ? "↑" : "↓")}
-                    </Button>
-                    <Button
-                      variant={sortBy === "date" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        if (sortBy === "date") {
-                          setSortReverse(!sortReverse)
-                        } else {
-                          setSortBy("date")
-                          setSortReverse(false)
-                        }
-                      }}
-                    >
-                      Sort by Date {sortBy === "date" && (sortReverse ? "↑" : "↓")}
-                    </Button>
-                    <Button
-                      variant={sortBy === "name" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        if (sortBy === "name") {
-                          setSortReverse(!sortReverse)
-                        } else {
-                          setSortBy("name")
-                          setSortReverse(false)
-                        }
-                      }}
-                    >
-                      Sort by Name {sortBy === "name" && (sortReverse ? "↑" : "↓")}
-                    </Button>
-                  </div>
-                  <div className="flex gap-4">
-                <ChartContainer
-                  config={{
-                    fee: {
-                      label: "Project Fee",
-                      color: "hsl(var(--chart-1))",
-                    },
-                  }}
-                  className="h-[600px]"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={processedData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="shortName" angle={-45} textAnchor="end" height={120} fontSize={12} />
-                      <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
-                      <ChartTooltip
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload
-                            return (
-                              <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                <p className="font-semibold">{data.name}</p>
-                                <p className="text-sm text-muted-foreground">State: {data.state}</p>
-                                <p className="text-sm text-muted-foreground">Start: {data.startDate}</p>
-                                <p className="text-sm text-muted-foreground">End: {data.endDate}</p>
-                                <p className="text-sm text-muted-foreground">Status: {data.projectStatus}</p>
-                                <p className="text-lg font-bold text-primary">${data.totalFee.toLocaleString()}</p>
-                              </div>
-                            )
-                          }
-                          return null
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <Card className="lg:col-span-2">
+                    <CardHeader>
+                      <CardTitle>Expense Breakdown - {selectedYear}</CardTitle>
+                      <CardDescription>{customFTE} FTE Configuration</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ChartContainer
+                        config={{
+                          amount: {
+                            label: "Amount",
+                            color: "hsl(var(--chart-1))",
+                          },
                         }}
-                      />
-                      <Bar dataKey="totalFee" radius={[4, 4, 0, 0]}>
-                        {processedData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.statusColor} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-                    <div className="w-[200px] space-y-2">
-                      <MultiSelectDropdown
-                        options={states}
-                        selected={filterState}
-                        onChange={setFilterState}
-                        title="States"
-                      />
-                      <MultiSelectDropdown
-                        options={practiceAreas}
-                        selected={filterPracticeArea}
-                        onChange={setFilterPracticeArea}
-                        title="Areas"
-                      />
-                      <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
-                    </div>
-                  </div>
-                </>
-              )}
+                        className="h-[400px]"
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={expenseBreakdown}
+                            layout="vertical"
+                            margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis type="number" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
+                            <YAxis type="category" dataKey="category" fontSize={10} width={90} />
+                            <ChartTooltip
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload
+                                  return (
+                                    <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                      <p className="font-semibold">{data.category}</p>
+                                      <p className="text-lg font-bold text-primary">${data.amount.toLocaleString()}</p>
+                                    </div>
+                                  )
+                                }
+                                return null
+                              }}
+                            />
+                            <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
+                              {expenseBreakdown.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
 
-              {chartViewType === "monthly" && (
-                <div className="flex gap-4">
-                  <div>
-                  <div className="flex justify-end mb-2">
-                    <Button variant="outline" size="sm" onClick={() => setShowMonthlyExpenses(!showMonthlyExpenses)}>
-                      {showMonthlyExpenses ? "Hide" : "Show"} Expenses
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Expense Parameters</CardTitle>
+                      <CardDescription>Adjust values to see impact on projections</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6 max-h-[400px] overflow-y-auto">
+                      {/* Personnel Costs */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Personnel Costs</h4>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Average Salary</label>
+                          <input
+                            type="number"
+                            value={expenseParams.avgSalary}
+                            onChange={(e) => updateExpenseParam("avgSalary", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Healthcare per Employee</label>
+                          <input
+                            type="number"
+                            value={expenseParams.healthcarePerEmployee}
+                            onChange={(e) => updateExpenseParam("healthcarePerEmployee", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Payroll Tax Rate</label>
+                          <input
+                            type="number"
+                            step="0.001"
+                            value={expenseParams.payrollTaxRate}
+                            onChange={(e) => updateExpenseParam("payrollTaxRate", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">401k Match Rate</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={expenseParams.retirement401kRate}
+                            onChange={(e) => updateExpenseParam("retirement401kRate", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Office & Facilities */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Office & Facilities</h4>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Office Rent (Monthly)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.officeRentPerMonth}
+                            onChange={(e) => updateExpenseParam("officeRentPerMonth", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Utilities (Monthly)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.utilitiesPerMonth}
+                            onChange={(e) => updateExpenseParam("utilitiesPerMonth", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Internet/Phone (Monthly)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.internetPhonePerMonth}
+                            onChange={(e) => updateExpenseParam("internetPhonePerMonth", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Technology */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Technology</h4>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Laptop per Employee</label>
+                          <input
+                            type="number"
+                            value={expenseParams.laptopPerEmployee}
+                            onChange={(e) => updateExpenseParam("laptopPerEmployee", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Software per Employee</label>
+                          <input
+                            type="number"
+                            value={expenseParams.softwareLicensesPerEmployee}
+                            onChange={(e) => updateExpenseParam("softwareLicensesPerEmployee", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">IT Support per Employee</label>
+                          <input
+                            type="number"
+                            value={expenseParams.itSupportPerEmployee}
+                            onChange={(e) => updateExpenseParam("itSupportPerEmployee", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Professional Services */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Professional Services</h4>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Accounting (Annual)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.accountingAnnual}
+                            onChange={(e) => updateExpenseParam("accountingAnnual", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Legal (Annual)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.legalAnnual}
+                            onChange={(e) => updateExpenseParam("legalAnnual", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Insurance (Annual)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.insuranceAnnual}
+                            onChange={(e) => updateExpenseParam("insuranceAnnual", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Business Development */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Business Development</h4>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Marketing (Annual)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.marketingAnnual}
+                            onChange={(e) => updateExpenseParam("marketingAnnual", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Travel per Employee</label>
+                          <input
+                            type="number"
+                            value={expenseParams.travelPerEmployee}
+                            onChange={(e) => updateExpenseParam("travelPerEmployee", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Training per Employee</label>
+                          <input
+                            type="number"
+                            value={expenseParams.conferencesTrainingPerEmployee}
+                            onChange={(e) => updateExpenseParam("conferencesTrainingPerEmployee", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Financing */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Financing</h4>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Loan Amount</label>
+                          <input
+                            type="number"
+                            value={expenseParams.loanAmount}
+                            onChange={(e) => updateExpenseParam("loanAmount", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Interest Rate</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={expenseParams.loanInterestRate}
+                            onChange={(e) => updateExpenseParam("loanInterestRate", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Term (Years)</label>
+                          <input
+                            type="number"
+                            value={expenseParams.loanTermYears}
+                            onChange={(e) => updateExpenseParam("loanTermYears", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Other */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm border-b pb-1">Other</h4>
+                        <div className="space-y-2">
+                          <label className="text-xs font-medium">Inflation Rate</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={expenseParams.inflationRate}
+                            onChange={(e) => updateExpenseParam("inflationRate", Number(e.target.value))}
+                            className="w-full px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <Button variant="outline" onClick={() => setExpenseParams(defaultExpenseParams)} className="w-full">
+                        Reset to Defaults
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="revenue" className="flex-1 overflow-auto space-y-4">
+                {/* FTE Mode Toggle and Inputs */}
+                <div className="mb-4 flex flex-col md:flex-row md:items-center md:gap-6 gap-2 p-4 bg-muted rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">FTE Mode:</span>
+                    <Button
+                      variant={fteMode === 'manual' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFteMode('manual')}
+                    >
+                      Manual
+                    </Button>
+                    <Button
+                      variant={fteMode === 'growth' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFteMode('growth')}
+                    >
+                      Growth Rate
                     </Button>
                   </div>
-                  <ChartContainer
-                    config={{
-                      revenue: {
-                        label: "Monthly Revenue",
-                        color: "hsl(var(--chart-3))",
-                      },
-                      expense: {
-                        label: "Monthly Expense",
-                        color: "hsl(var(--chart-5))",
-                      },
-                    }}
-                    className="h-[500px]"
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={combinedMonthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" fontSize={12} angle={-45} textAnchor="end" height={80} />
-                        <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
-                        <ChartTooltip
-                          content={({ active, payload, label }) => {
-                            if (active && payload && payload.length) {
-                              const data = payload[0].payload
-                              return (
-                                <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
-                                  <p className="font-semibold">{data.month}</p>
-                                  <p className="text-lg font-bold text-primary">
-                                    Revenue: ${data.revenue.toLocaleString()}
-                                  </p>
-                                  {showMonthlyExpenses && (
-                                    <p className="text-lg font-bold text-red-500">
-                                      Expense: ${data.expense.toLocaleString()}
+                  <div className="flex items-center gap-4 flex-wrap mt-2 md:mt-0">
+                    {fteMode === 'manual' ? (
+                      <React.Fragment>
+                        <span className="text-xs font-medium">FTEs per year:</span>
+                        {projectionYears.map((year) => (
+                          <div key={year} className="flex flex-col items-center">
+                            <span className="text-xs text-muted-foreground">{year}</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={manualFTEs[year] || 1}
+                              onChange={e => setManualFTEs({ ...manualFTEs, [year]: Number(e.target.value) })}
+                              className="w-16 px-2 py-1 border rounded text-sm text-center"
+                            />
+                          </div>
+                        ))}
+                      </React.Fragment>
+                    ) : (
+                      <React.Fragment>
+                        <span className="text-xs font-medium">Base FTE:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={fteBase}
+                          onChange={e => setFteBase(Number(e.target.value))}
+                          className="w-16 px-2 py-1 border rounded text-sm text-center"
+                        />
+                        <span className="text-xs font-medium">Growth Rate (%/yr):</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={(fteGrowth * 100).toFixed(2)}
+                          onChange={e => setFteGrowth(Number(e.target.value) / 100)}
+                          className="w-20 px-2 py-1 border rounded text-sm text-center"
+                        />
+                      </React.Fragment>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Revenue Projections</CardTitle>
+                      <CardDescription>Contract revenue growth from 2025-2030</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ChartContainer
+                        config={{
+                          contractRevenue: {
+                            label: "Contract Revenue",
+                            color: "hsl(var(--chart-1))",
+                          },
+                          billableRevenue: {
+                            label: "Billable Revenue",
+                            color: "hsl(var(--chart-2))",
+                          },
+                        }}
+                        className="h-[300px]"
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="year" fontSize={12} />
+                            <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                            <ChartTooltip
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload
+                                  return (
+                                    <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                      <p className="font-semibold">{data.year}</p>
+                                      <p className="text-sm text-blue-500">
+                                        Contract Revenue: ${data.contractRevenue.toLocaleString()}
+                                      </p>
+                                      <p className="text-sm text-green-500">
+                                        Billable Revenue: ${data.billableRevenue.toLocaleString()}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">FTE: {data.fte}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Profit Margin: {data.profitMargin.toFixed(1)}%
+                                      </p>
+                                    </div>
+                                  )
+                                }
+                                return null
+                              }}
+                            />
+                            <Legend />
+                            <Bar dataKey="contractRevenue" fill="var(--color-contractRevenue)" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="billableRevenue" fill="var(--color-billableRevenue)" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Profit Margins</CardTitle>
+                      <CardDescription>Net income and profit margin trends</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ChartContainer
+                        config={{
+                          netIncome: {
+                            label: "Net Income",
+                            color: "hsl(var(--chart-3))",
+                          },
+                          profitMargin: {
+                            label: "Profit Margin %",
+                            color: "hsl(var(--chart-4))",
+                          },
+                        }}
+                        className="h-[300px]"
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="year" fontSize={12} />
+                            <YAxis
+                              yAxisId="left"
+                              tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
+                              fontSize={12}
+                            />
+                            <YAxis
+                              yAxisId="right"
+                              orientation="right"
+                              tickFormatter={(value) => `${value.toFixed(0)}%`}
+                              fontSize={12}
+                            />
+                            <ChartTooltip
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload
+                                  return (
+                                    <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                      <p className="font-semibold">{data.year}</p>
+                                      <p className="text-sm text-green-500">Net Income: ${data.netIncome.toLocaleString()}</p>
+                                      <p className="text-sm text-blue-500">Profit Margin: {data.profitMargin.toFixed(1)}%</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Revenue: ${data.contractRevenue.toLocaleString()}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Expenses: ${data.totalExpenses.toLocaleString()}
+                                      </p>
+                                    </div>
+                                  )
+                                }
+                                return null
+                              }}
+                            />
+                            <Legend />
+                            <Bar yAxisId="left" dataKey="netIncome" fill="var(--color-netIncome)" radius={[4, 4, 0, 0]} />
+                            <Line
+                              yAxisId="right"
+                              type="monotone"
+                              dataKey="profitMargin"
+                              stroke="var(--color-profitMargin)"
+                              strokeWidth={3}
+                              dot={{ r: 4 }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Revenue Breakdown by Year</CardTitle>
+                    <CardDescription>Detailed financial projections with key metrics</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left p-2">Year</th>
+                            <th className="text-left p-2">FTE</th>
+                            <th className="text-left p-2">Contract Revenue</th>
+                            <th className="text-left p-2">Billable Revenue</th>
+                            <th className="text-left p-2">Total Expenses</th>
+                            <th className="text-left p-2">Net Income</th>
+                            <th className="text-left p-2">Profit Margin</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {businessProjections.map((proj) => (
+                            <tr key={proj.year} className="border-b hover:bg-muted/50">
+                              <td className="p-2 font-medium">{proj.year}</td>
+                              <td className="p-2">{proj.fte}</td>
+                              <td className="p-2">${proj.contractRevenue.toLocaleString()}</td>
+                              <td className="p-2">${proj.billableRevenue.toLocaleString()}</td>
+                              <td className="p-2">${proj.totalExpenses.toLocaleString()}</td>
+                              <td className="p-2 font-medium text-green-600">${proj.netIncome.toLocaleString()}</td>
+                              <td className="p-2">{proj.profitMargin.toFixed(1)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="cashflow" className="flex-1 overflow-auto space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cash Flow Projections</CardTitle>
+                    <CardDescription>
+                      Projected cash flow from {projectionYears[0]} to {projectionYears[projectionYears.length - 1]}
+                    </CardDescription>
+                    <div className="flex items-center gap-2 mt-2">
+                      <label className="text-sm font-medium">Starting Cash:</label>
+                      <input
+                        type="number"
+                        value={startingCash}
+                        onChange={(e) => setStartingCash(Number(e.target.value))}
+                        className="w-32 px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm">
+                      <div>
+                        <div className="font-semibold">Starting Cash</div>
+                        <div className="text-2xl font-bold text-primary">${(startingCash / 1000).toFixed(0)}K</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Total Net Income</div>
+                        <div className="text-2xl font-bold text-green-600">
+                          ${(cashFlowProjections.reduce((sum, p) => sum + p.netIncome, 0) / 1000000).toFixed(1)}M
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Lowest Cash Point</div>
+                        <div className="text-2xl font-bold text-red-600">
+                          ${(Math.min(...cashFlowProjections.map((p) => p.cumulativeCash)) / 1000).toFixed(0)}K
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">
+                          Ending Cash ({cashFlowProjections[cashFlowProjections.length - 1].year})
+                        </div>
+                        <div className="text-2xl font-bold text-purple-600">
+                          ${(cashFlowProjections[cashFlowProjections.length - 1].cumulativeCash / 1000000).toFixed(1)}M
+                        </div>
+                      </div>
+                    </div>
+
+                    <ChartContainer
+                      config={{
+                        cumulativeCash: {
+                          label: "Cumulative Cash",
+                          color: "hsl(var(--chart-1))",
+                        },
+                        netIncome: {
+                          label: "Net Income",
+                          color: "hsl(var(--chart-2))",
+                        },
+                      }}
+                      className="h-[400px]"
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={cashFlowProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="year" fontSize={12} />
+                          <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                          <ChartTooltip
+                            content={({ active, payload, label }) => {
+                              if (active && payload && payload.length) {
+                                const data = payload[0].payload
+                                return (
+                                  <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                    <p className="font-semibold">{data.year}</p>
+                                    <p className="text-sm text-blue-500">
+                                      Cumulative Cash: ${data.cumulativeCash.toLocaleString()}
                                     </p>
-                                  )}
-                                  <p className="text-sm text-muted-foreground mt-2">
-                                    Active Projects ({data.projects.length}):
-                                  </p>
-                                  <ul className="text-xs text-muted-foreground mt-1 space-y-1">
-                                    {data.projects.slice(0, 3).map((project: string, idx: number) => (
-                                      <li key={idx} className="truncate">
-                                        • {project.length > 25 ? project.substring(0, 25) + "..." : project}
-                                      </li>
-                                    ))}
-                                    {data.projects.length > 3 && (
-                                      <li className="text-xs">... and {data.projects.length - 3} more</li>
-                                    )}
-                                  </ul>
-                                </div>
-                              )
-                            }
-                            return null
-                          }}
-                        />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="revenue"
-                          stroke="var(--color-revenue)"
-                          strokeWidth={3}
-                          dot={{ r: 2, fill: 'var(--color-revenue)', stroke: 'var(--color-revenue)' }}
-                        />
-                        {showMonthlyExpenses && (
+                                    <p className="text-sm text-green-500">Net Income: ${data.netIncome.toLocaleString()}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Revenue: ${data.contractRevenue.toLocaleString()}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Expenses: ${data.totalExpenses.toLocaleString()}
+                                    </p>
+                                  </div>
+                                )
+                              }
+                              return null
+                            }}
+                          />
+                          <Legend />
                           <Line
                             type="monotone"
-                            dataKey="expense"
-                            stroke="var(--color-expense)"
+                            dataKey="cumulativeCash"
+                            stroke="var(--color-cumulativeCash)"
+                            strokeWidth={3}
+                            dot={{ r: 5 }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="netIncome"
+                            stroke="var(--color-netIncome)"
                             strokeWidth={2}
                             strokeDasharray="5 5"
-                            dot={{ r: 2, fill: 'var(--color-expense)', stroke: 'var(--color-expense)' }}
+                            dot={{ r: 3 }}
                           />
-                        )}
-                        <Brush dataKey="month" height={30} stroke="hsl(var(--chart-3))" />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </ChartContainer>
-                  </div>
-                  <div className="w-[200px] space-y-2 self-center">
-                    <MultiSelectDropdown
-                      options={states}
-                      selected={filterState}
-                      onChange={setFilterState}
-                      title="States"
-                    />
-                    <MultiSelectDropdown
-                      options={practiceAreas}
-                      selected={filterPracticeArea}
-                      onChange={setFilterPracticeArea}
-                      title="Areas"
-                    />
-                    <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
-                  </div>
-                </div>
-              )}
-
-              {chartViewType === "quarterly" && (
-                <div className="flex gap-4">
-                <ChartContainer
-                  config={{
-                    value: {
-                      label: "Contract Value",
-                      color: "hsl(var(--chart-2))",
-                    },
-                  }}
-                  className="h-[400px]"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={quarterlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="quarter" fontSize={12} />
-                      <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                      <ChartTooltip
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload
-                            return (
-                              <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
-                                <p className="font-semibold">{data.quarter}</p>
-                                <p className="text-lg font-bold text-primary">${data.value.toLocaleString()}</p>
-                                <p className="text-sm text-muted-foreground mt-2">Projects ({data.projects.length}):</p>
-                                <ul className="text-xs text-muted-foreground mt-1 space-y-1">
-                                  {data.projects.map((project: string, idx: number) => (
-                                    <li key={idx} className="truncate">
-                                      • {project.length > 30 ? project.substring(0, 30) + "..." : project}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )
-                          }
-                          return null
-                        }}
-                      />
-                      <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-                  <div className="w-[200px] space-y-2 self-center">
-                    <MultiSelectDropdown
-                      options={states}
-                      selected={filterState}
-                      onChange={setFilterState}
-                      title="States"
-                    />
-                    <MultiSelectDropdown
-                      options={practiceAreas}
-                      selected={filterPracticeArea}
-                      onChange={setFilterPracticeArea}
-                      title="Areas"
-                    />
-                    <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
-                  </div>
-                </div>
-              )}
-
-              {chartViewType === "growth" && (
-                <div className="flex gap-4">
-                <ChartContainer
-                  config={{
-                    cumulativeValue: {
-                      label: "Cumulative Value",
-                      color: "hsl(var(--chart-4))",
-                    },
-                    projected: {
-                      label: "Projected Value",
-                      color: "hsl(var(--chart-5))",
-                    },
-                  }}
-                  className="h-[500px]"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={growthTrendData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="year" fontSize={12} />
-                      <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                      <ChartTooltip
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload
-                            const isProjected = data.isProjected
-                            return (
-                              <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
-                                <p className="font-semibold">
-                                  {data.year} {isProjected && "(Projected)"}
-                                </p>
-                                <p className="text-lg font-bold text-primary">
-                                  ${data.cumulativeValue.toLocaleString()}
-                                </p>
-                                {!isProjected && data.yearlyValue > 0 && (
-                                  <p className="text-sm text-muted-foreground">
-                                    New contracts: ${data.yearlyValue.toLocaleString()}
-                                  </p>
-                                )}
-                                {isProjected && data.growthRate && (
-                                  <p className="text-sm text-muted-foreground">
-                                    Growth rate: {(data.growthRate * 100).toFixed(1)}% CAGR
-                                  </p>
-                                )}
-                                {!isProjected && data.projects && data.projects.length > 0 && (
-                                  <>
-                                    <p className="text-sm text-muted-foreground mt-2">
-                                      Projects ({data.projects.length}):
-                                    </p>
-                                    <ul className="text-xs text-muted-foreground mt-1 space-y-1">
-                                      {data.projects.slice(0, 3).map((project: string, idx: number) => (
-                                        <li key={idx} className="truncate">
-                                          • {project.length > 25 ? project.substring(0, 25) + "..." : project}
-                                        </li>
-                                      ))}
-                                      {data.projects.length > 3 && (
-                                        <li className="text-xs">... and {data.projects.length - 3} more</li>
-                                      )}
-                                    </ul>
-                                  </>
-                                )}
-                              </div>
-                            )
-                          }
-                          return null
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="cumulativeValue"
-                        stroke="var(--color-cumulativeValue)"
-                        strokeWidth={3}
-                        dot={(props) => {
-                          const { payload } = props
-                          return (
-                            <circle
-                                key={payload.year}
-                              cx={props.cx}
-                              cy={props.cy}
-                              r={payload?.isProjected ? 3 : 5}
-                              fill={payload?.isProjected ? "hsl(var(--chart-5))" : "var(--color-cumulativeValue)"}
-                              strokeWidth={payload?.isProjected ? 2 : 0}
-                              stroke={payload?.isProjected ? "var(--color-cumulativeValue)" : "none"}
-                              strokeDasharray={payload?.isProjected ? "4,4" : "none"}
-                            />
-                          )
-                        }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-                  <div className="w-[200px] space-y-2 self-center">
-                    <MultiSelectDropdown
-                      options={states}
-                      selected={filterState}
-                      onChange={setFilterState}
-                      title="States"
-                    />
-                    <MultiSelectDropdown
-                      options={practiceAreas}
-                      selected={filterPracticeArea}
-                      onChange={setFilterPracticeArea}
-                      title="Areas"
-                    />
-                    <MultiSelectDropdown
-                      options={statuses}
-                      selected={filterStatus}
-                      onChange={setFilterStatus}
-                      title="Statuses"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {(chartViewType === "projects") && (
-                <div className="mt-4 flex items-center justify-center gap-6 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-orange-500 rounded"></div>
-                    <span>Not Started</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                    <span>In Progress</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-green-500 rounded"></div>
-                    <span>Completed</span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="expenses" className="flex-1 overflow-auto space-y-4">
-          {/* FTE Mode Toggle and Inputs (moved from Revenue) */}
-          <div className="mb-4 flex flex-col md:flex-row md:items-center md:gap-6 gap-2 p-4 bg-muted rounded-lg border">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">FTE Mode:</span>
-              <Button
-                variant={fteMode === 'manual' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFteMode('manual')}
-              >
-                Manual
-              </Button>
-              <Button
-                variant={fteMode === 'growth' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFteMode('growth')}
-              >
-                Growth Rate
-              </Button>
-            </div>
-            <div className="flex items-center gap-4 flex-wrap mt-2 md:mt-0">
-              <span className="text-xs font-medium">Year:</span>
-              {projectionYears.map((year) => (
-                <Button
-                  key={year}
-                  variant={selectedYear === year ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSelectedYear(year)}
-                >
-                  {year}
-                </Button>
-              ))}
-              {fteMode === 'manual' ? (
-                <React.Fragment>
-                  <span className="text-xs font-medium">FTEs per year:</span>
-                  {projectionYears.map((year) => (
-                    <div key={year} className="flex flex-col items-center">
-                      <span className="text-xs text-muted-foreground">{year}</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={manualFTEs[year] || 1}
-                        onChange={e => setManualFTEs({ ...manualFTEs, [year]: Number(e.target.value) })}
-                        className="w-16 px-2 py-1 border rounded text-sm text-center"
-                      />
-            </div>
-                  ))}
-                </React.Fragment>
-              ) : (
-                <React.Fragment>
-                  <span className="text-xs font-medium">Base FTE:</span>
-              <input
-                type="number"
-                min="1"
-                    max="100"
-                    value={fteBase}
-                    onChange={e => setFteBase(Number(e.target.value))}
-                    className="w-16 px-2 py-1 border rounded text-sm text-center"
-                  />
-                  <span className="text-xs font-medium">Growth Rate (%/yr):</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={(fteGrowth * 100).toFixed(2)}
-                    onChange={e => setFteGrowth(Number(e.target.value) / 100)}
-                    className="w-20 px-2 py-1 border rounded text-sm text-center"
-                  />
-                </React.Fragment>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Expense Breakdown - {selectedYear}</CardTitle>
-                <CardDescription>{customFTE} FTE Configuration</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={{
-                    amount: {
-                      label: "Amount",
-                      color: "hsl(var(--chart-1))",
-                    },
-                  }}
-                  className="h-[400px]"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={expenseBreakdown}
-                      layout="vertical"
-                      margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
-                      <YAxis type="category" dataKey="category" fontSize={10} width={90} />
-                      <ChartTooltip
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload
-                            return (
-                              <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                <p className="font-semibold">{data.category}</p>
-                                <p className="text-lg font-bold text-primary">${data.amount.toLocaleString()}</p>
-                              </div>
-                            )
-                          }
-                          return null
-                        }}
-                      />
-                      <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
-                        {expenseBreakdown.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="overview" className="flex-1 overflow-auto space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Business Projections Summary</CardTitle>
+                      <CardDescription>Key financial metrics for 2025-2030</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {businessProjections.map((proj) => (
+                          <div key={proj.year} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                            <div>
+                              <div className="font-medium">{proj.year}</div>
+                              <div className="text-sm text-muted-foreground">{proj.fte} FTE</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold">${(proj.contractRevenue / 1000000).toFixed(1)}M</div>
+                              <div className="text-sm text-muted-foreground">{proj.profitMargin.toFixed(1)}% margin</div>
+                            </div>
+                          </div>
                         ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-              </CardContent>
-            </Card>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Expense Parameters</CardTitle>
-                <CardDescription>Adjust values to see impact on projections</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6 max-h-[400px] overflow-y-auto">
-                {/* Personnel Costs */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm border-b pb-1">Personnel Costs</h4>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Average Salary</label>
-                    <input
-                      type="number"
-                      value={expenseParams.avgSalary}
-                      onChange={(e) => updateExpenseParam("avgSalary", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Healthcare per Employee</label>
-                    <input
-                      type="number"
-                      value={expenseParams.healthcarePerEmployee}
-                      onChange={(e) => updateExpenseParam("healthcarePerEmployee", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Payroll Tax Rate</label>
-                    <input
-                      type="number"
-                      step="0.001"
-                      value={expenseParams.payrollTaxRate}
-                      onChange={(e) => updateExpenseParam("payrollTaxRate", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">401k Match Rate</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={expenseParams.retirement401kRate}
-                      onChange={(e) => updateExpenseParam("retirement401kRate", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Project Distribution</CardTitle>
+                      <CardDescription>Breakdown by practice area and status</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="font-medium mb-2">By Practice Area</h4>
+                          <div className="space-y-2">
+                            {practiceAreaData.slice(0, 3).map((area, index) => (
+                              <div key={index} className="flex justify-between items-center">
+                                <span className="text-sm">{area.area}</span>
+                                <div className="text-right">
+                                  <span className="font-medium">{area.count} projects</span>
+                                  <div className="text-xs text-muted-foreground">${(area.totalValue / 1000).toFixed(0)}K</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-medium mb-2">By Status</h4>
+                          <div className="space-y-2">
+                            {statusData.map((status, index) => (
+                              <div key={index} className="flex justify-between items-center">
+                                <span className="text-sm">{status.status}</span>
+                                <div className="text-right">
+                                  <span className="font-medium">{status.count} projects</span>
+                                  <div className="text-xs text-muted-foreground">
+                                    ${(status.totalValue / 1000).toFixed(0)}K
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
 
-                {/* Office & Facilities */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm border-b pb-1">Office & Facilities</h4>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Office Rent (Monthly)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.officeRentPerMonth}
-                      onChange={(e) => updateExpenseParam("officeRentPerMonth", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Utilities (Monthly)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.utilitiesPerMonth}
-                      onChange={(e) => updateExpenseParam("utilitiesPerMonth", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Internet/Phone (Monthly)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.internetPhonePerMonth}
-                      onChange={(e) => updateExpenseParam("internetPhonePerMonth", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Technology */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm border-b pb-1">Technology</h4>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Laptop per Employee</label>
-                    <input
-                      type="number"
-                      value={expenseParams.laptopPerEmployee}
-                      onChange={(e) => updateExpenseParam("laptopPerEmployee", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Software per Employee</label>
-                    <input
-                      type="number"
-                      value={expenseParams.softwareLicensesPerEmployee}
-                      onChange={(e) => updateExpenseParam("softwareLicensesPerEmployee", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">IT Support per Employee</label>
-                    <input
-                      type="number"
-                      value={expenseParams.itSupportPerEmployee}
-                      onChange={(e) => updateExpenseParam("itSupportPerEmployee", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Professional Services */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm border-b pb-1">Professional Services</h4>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Accounting (Annual)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.accountingAnnual}
-                      onChange={(e) => updateExpenseParam("accountingAnnual", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Legal (Annual)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.legalAnnual}
-                      onChange={(e) => updateExpenseParam("legalAnnual", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Insurance (Annual)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.insuranceAnnual}
-                      onChange={(e) => updateExpenseParam("insuranceAnnual", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Business Development */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm border-b pb-1">Business Development</h4>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Marketing (Annual)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.marketingAnnual}
-                      onChange={(e) => updateExpenseParam("marketingAnnual", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Travel per Employee</label>
-                    <input
-                      type="number"
-                      value={expenseParams.travelPerEmployee}
-                      onChange={(e) => updateExpenseParam("travelPerEmployee", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Training per Employee</label>
-                    <input
-                      type="number"
-                      value={expenseParams.conferencesTrainingPerEmployee}
-                      onChange={(e) => updateExpenseParam("conferencesTrainingPerEmployee", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Financing */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm border-b pb-1">Financing</h4>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Loan Amount</label>
-                    <input
-                      type="number"
-                      value={expenseParams.loanAmount}
-                      onChange={(e) => updateExpenseParam("loanAmount", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Interest Rate</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={expenseParams.loanInterestRate}
-                      onChange={(e) => updateExpenseParam("loanInterestRate", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Term (Years)</label>
-                    <input
-                      type="number"
-                      value={expenseParams.loanTermYears}
-                      onChange={(e) => updateExpenseParam("loanTermYears", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                </div>
-
-                {/* Other */}
-                <div className="space-y-3">
-                  <h4 className="font-semibold text-sm border-b pb-1">Other</h4>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Inflation Rate</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={expenseParams.inflationRate}
-                      onChange={(e) => updateExpenseParam("inflationRate", Number(e.target.value))}
-                      className="w-full px-2 py-1 border rounded text-sm"
-                    />
-                  </div>
-                </div>
-
-                <Button variant="outline" onClick={() => setExpenseParams(defaultExpenseParams)} className="w-full">
-                  Reset to Defaults
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="revenue" className="flex-1 overflow-auto space-y-4">
-          {/* FTE Mode Toggle and Inputs */}
-          <div className="mb-4 flex flex-col md:flex-row md:items-center md:gap-6 gap-2 p-4 bg-muted rounded-lg border">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">FTE Mode:</span>
-              <Button
-                variant={fteMode === 'manual' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFteMode('manual')}
-              >
-                Manual
-              </Button>
-              <Button
-                variant={fteMode === 'growth' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setFteMode('growth')}
-              >
-                Growth Rate
-              </Button>
-            </div>
-            <div className="flex items-center gap-4 flex-wrap mt-2 md:mt-0">
-              {fteMode === 'manual' ? (
-                <React.Fragment>
-                  <span className="text-xs font-medium">FTEs per year:</span>
-                  {projectionYears.map((year) => (
-                    <div key={year} className="flex flex-col items-center">
-                      <span className="text-xs text-muted-foreground">{year}</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={manualFTEs[year] || 1}
-                        onChange={e => setManualFTEs({ ...manualFTEs, [year]: Number(e.target.value) })}
-                        className="w-16 px-2 py-1 border rounded text-sm text-center"
-                      />
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Geographic Distribution</CardTitle>
+                    <CardDescription>Projects by state with total values</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {mapStateData.map((stateData, index) => (
+                        <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                          <div>
+                            <div className="font-medium">{stateCoordinates[stateData.state]?.name || stateData.state}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {stateData.count} project{stateData.count !== 1 ? "s" : ""}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
+                            <div className="text-sm text-muted-foreground">
+                              ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </React.Fragment>
-              ) : (
-                <React.Fragment>
-                  <span className="text-xs font-medium">Base FTE:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={fteBase}
-                    onChange={e => setFteBase(Number(e.target.value))}
-                    className="w-16 px-2 py-1 border rounded text-sm text-center"
-                  />
-                  <span className="text-xs font-medium">Growth Rate (%/yr):</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={(fteGrowth * 100).toFixed(2)}
-                    onChange={e => setFteGrowth(Number(e.target.value) / 100)}
-                    className="w-20 px-2 py-1 border rounded text-sm text-center"
-                  />
-                </React.Fragment>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Revenue Projections</CardTitle>
-                <CardDescription>Contract revenue growth from 2025-2030</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={{
-                    contractRevenue: {
-                      label: "Contract Revenue",
-                      color: "hsl(var(--chart-1))",
-                    },
-                    billableRevenue: {
-                      label: "Billable Revenue",
-                      color: "hsl(var(--chart-2))",
-                    },
-                  }}
-                  className="h-[300px]"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="year" fontSize={12} />
-                      <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                      <ChartTooltip
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload
-                            return (
-                              <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                <p className="font-semibold">{data.year}</p>
-                                <p className="text-sm text-blue-500">
-                                  Contract Revenue: ${data.contractRevenue.toLocaleString()}
-                                </p>
-                                <p className="text-sm text-green-500">
-                                  Billable Revenue: ${data.billableRevenue.toLocaleString()}
-                                </p>
-                                <p className="text-xs text-muted-foreground">FTE: {data.fte}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Profit Margin: {data.profitMargin.toFixed(1)}%
-                                </p>
-                              </div>
-                            )
-                          }
-                          return null
-                        }}
-                      />
-                      <Legend />
-                      <Bar dataKey="contractRevenue" fill="var(--color-contractRevenue)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="billableRevenue" fill="var(--color-billableRevenue)" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Profit Margins</CardTitle>
-                <CardDescription>Net income and profit margin trends</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={{
-                    netIncome: {
-                      label: "Net Income",
-                      color: "hsl(var(--chart-3))",
-                    },
-                    profitMargin: {
-                      label: "Profit Margin %",
-                      color: "hsl(var(--chart-4))",
-                    },
-                  }}
-                  className="h-[300px]"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="year" fontSize={12} />
-                      <YAxis
-                        yAxisId="left"
-                        tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
-                        fontSize={12}
-                      />
-                      <YAxis
-                        yAxisId="right"
-                        orientation="right"
-                        tickFormatter={(value) => `${value.toFixed(0)}%`}
-                        fontSize={12}
-                      />
-                      <ChartTooltip
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload
-                            return (
-                              <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                <p className="font-semibold">{data.year}</p>
-                                <p className="text-sm text-green-500">Net Income: ${data.netIncome.toLocaleString()}</p>
-                                <p className="text-sm text-blue-500">Profit Margin: {data.profitMargin.toFixed(1)}%</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Revenue: ${data.contractRevenue.toLocaleString()}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Expenses: ${data.totalExpenses.toLocaleString()}
-                                </p>
-                              </div>
-                            )
-                          }
-                          return null
-                        }}
-                      />
-                      <Legend />
-                      <Bar yAxisId="left" dataKey="netIncome" fill="var(--color-netIncome)" radius={[4, 4, 0, 0]} />
-                      <Line
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="profitMargin"
-                        stroke="var(--color-profitMargin)"
-                        strokeWidth={3}
-                        dot={{ r: 4 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Revenue Breakdown by Year</CardTitle>
-              <CardDescription>Detailed financial projections with key metrics</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2">Year</th>
-                      <th className="text-left p-2">FTE</th>
-                      <th className="text-left p-2">Contract Revenue</th>
-                      <th className="text-left p-2">Billable Revenue</th>
-                      <th className="text-left p-2">Total Expenses</th>
-                      <th className="text-left p-2">Net Income</th>
-                      <th className="text-left p-2">Profit Margin</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {businessProjections.map((proj) => (
-                      <tr key={proj.year} className="border-b hover:bg-muted/50">
-                        <td className="p-2 font-medium">{proj.year}</td>
-                        <td className="p-2">{proj.fte}</td>
-                        <td className="p-2">${proj.contractRevenue.toLocaleString()}</td>
-                        <td className="p-2">${proj.billableRevenue.toLocaleString()}</td>
-                        <td className="p-2">${proj.totalExpenses.toLocaleString()}</td>
-                        <td className="p-2 font-medium text-green-600">${proj.netIncome.toLocaleString()}</td>
-                        <td className="p-2">{proj.profitMargin.toFixed(1)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="cashflow" className="flex-1 overflow-auto space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Cash Flow Projections</CardTitle>
-              <CardDescription>
-                Projected cash flow from {projectionYears[0]} to {projectionYears[projectionYears.length - 1]}
-              </CardDescription>
-              <div className="flex items-center gap-2 mt-2">
-                <label className="text-sm font-medium">Starting Cash:</label>
-                <input
-                  type="number"
-                  value={startingCash}
-                  onChange={(e) => setStartingCash(Number(e.target.value))}
-                  className="w-32 px-2 py-1 border rounded text-sm"
-                />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm">
-                <div>
-                  <div className="font-semibold">Starting Cash</div>
-                  <div className="text-2xl font-bold text-primary">${(startingCash / 1000).toFixed(0)}K</div>
-                </div>
-                <div>
-                  <div className="font-semibold">Total Net Income</div>
-                  <div className="text-2xl font-bold text-green-600">
-                    ${(cashFlowProjections.reduce((sum, p) => sum + p.netIncome, 0) / 1000000).toFixed(1)}M
-                  </div>
-                </div>
-                <div>
-                  <div className="font-semibold">Lowest Cash Point</div>
-                  <div className="text-2xl font-bold text-red-600">
-                    ${(Math.min(...cashFlowProjections.map((p) => p.cumulativeCash)) / 1000).toFixed(0)}K
-                  </div>
-                </div>
-                <div>
-                  <div className="font-semibold">
-                    Ending Cash ({cashFlowProjections[cashFlowProjections.length - 1].year})
-                  </div>
-                  <div className="text-2xl font-bold text-purple-600">
-                    ${(cashFlowProjections[cashFlowProjections.length - 1].cumulativeCash / 1000000).toFixed(1)}M
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+        )}
+        {allowedTabs.includes('notetaker') && (
+          <TabsContent value="notetaker">
+            <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow border">
+              <div className="flex items-start justify-between mb-4">
+                <h2 className="text-xl font-bold">Notetaker</h2>
+                {/* Pie chart for note distribution */}
+                <div className="flex flex-col items-end min-w-[260px]">
+                  <PieChart width={110} height={110}>
+                    <Pie
+                      data={categories.map(cat => ({ name: cat, value: notes.filter(n => n.category === cat).length }))}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={45}
+                      label={false}
+                    >
+                      {categories.map((cat, idx) => (
+                        <Cell key={`cell-${cat}`} fill={["#2563eb","#16a34a","#f59e42","#a21caf","#e11d48","#0ea5e9","#fbbf24","#10b981","#f43f5e","#6366f1"][idx % 10]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value, name) => [`${value} notes`, name]} />
+                  </PieChart>
+                  <div className="mt-2">
+                    <Legend layout="vertical" align="left" verticalAlign="middle" />
                   </div>
                 </div>
               </div>
-
-              <ChartContainer
-                config={{
-                  cumulativeCash: {
-                    label: "Cumulative Cash",
-                    color: "hsl(var(--chart-1))",
-                  },
-                  netIncome: {
-                    label: "Net Income",
-                    color: "hsl(var(--chart-2))",
-                  },
+              <form
+                onSubmit={e => {
+                  e.preventDefault()
+                  if (noteText.trim() && noteCategory !== 'All') {
+                    setNotes([{ text: noteText, category: noteCategory, timestamp: Date.now() }, ...notes])
+                    setNoteText('')
+                  }
+                  if (noteCategory === 'Other' && newCategory.trim()) {
+                    if (!categories.includes(newCategory.trim())) {
+                      setCategories([...categories, newCategory.trim()])
+                      setNoteCategory(newCategory.trim())
+                      setNewCategory('')
+                      localStorage.setItem('dashboardNoteCategories', JSON.stringify([...categories, newCategory.trim()]))
+                    }
+                  }
                 }}
-                className="h-[400px]"
+                className="flex flex-col md:flex-row gap-2 mb-6"
               >
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={cashFlowProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="year" fontSize={12} />
-                    <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                    <ChartTooltip
-                      content={({ active, payload, label }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload
-                          return (
-                            <div className="bg-background border rounded-lg p-3 shadow-lg">
-                              <p className="font-semibold">{data.year}</p>
-                              <p className="text-sm text-blue-500">
-                                Cumulative Cash: ${data.cumulativeCash.toLocaleString()}
-                              </p>
-                              <p className="text-sm text-green-500">Net Income: ${data.netIncome.toLocaleString()}</p>
-                              <p className="text-xs text-muted-foreground">
-                                Revenue: ${data.contractRevenue.toLocaleString()}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                Expenses: ${data.totalExpenses.toLocaleString()}
-                              </p>
-                            </div>
-                          )
-                        }
-                        return null
-                      }}
-                    />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="cumulativeCash"
-                      stroke="var(--color-cumulativeCash)"
-                      strokeWidth={3}
-                      dot={{ r: 5 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="netIncome"
-                      stroke="var(--color-netIncome)"
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      dot={{ r: 3 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="overview" className="flex-1 overflow-auto space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Business Projections Summary</CardTitle>
-                <CardDescription>Key financial metrics for 2025-2030</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {businessProjections.map((proj) => (
-                    <div key={proj.year} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                      <div>
-                        <div className="font-medium">{proj.year}</div>
-                        <div className="text-sm text-muted-foreground">{proj.fte} FTE</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold">${(proj.contractRevenue / 1000000).toFixed(1)}M</div>
-                        <div className="text-sm text-muted-foreground">{proj.profitMargin.toFixed(1)}% margin</div>
-                      </div>
-                    </div>
+                <input
+                  type="text"
+                  value={noteText}
+                  onChange={e => setNoteText(e.target.value)}
+                  placeholder="Type your note..."
+                  className="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <select
+                  value={noteCategory}
+                  onChange={e => {
+                    setNoteCategory(e.target.value)
+                    if (e.target.value !== 'Other') setNewCategory('')
+                  }}
+                  className="px-2 py-2 border rounded"
+                >
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
                   ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Project Distribution</CardTitle>
-                <CardDescription>Breakdown by practice area and status</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium mb-2">By Practice Area</h4>
-                    <div className="space-y-2">
-                      {practiceAreaData.slice(0, 3).map((area, index) => (
-                        <div key={index} className="flex justify-between items-center">
-                          <span className="text-sm">{area.area}</span>
-                          <div className="text-right">
-                            <span className="font-medium">{area.count} projects</span>
-                            <div className="text-xs text-muted-foreground">${(area.totalValue / 1000).toFixed(0)}K</div>
-                          </div>
-                        </div>
+                  <option value="Other">Other</option>
+                </select>
+                {noteCategory === 'Other' && (
+                  <input
+                    type="text"
+                    value={newCategory}
+                    onChange={e => setNewCategory(e.target.value)}
+                    placeholder="New category name"
+                    className="px-2 py-2 border rounded"
+                    required
+                  />
+                )}
+                <Button type="submit" className="px-4">Add Note</Button>
+              </form>
+              {/* Notetaker filter bar */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  className={`px-3 py-1 rounded ${noteFilter === 'All' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                  onClick={() => setNoteFilter('All')}
+                >
+                  All
+                </button>
+                {categories.map((cat: string) => (
+                  <button
+                    key={cat}
+                    className={`px-3 py-1 rounded ${noteFilter === cat ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                    onClick={() => setNoteFilter(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-4">
+                {(noteFilter === 'All' ? categories : [noteFilter]).map((cat: string) => (
+                  <div key={cat} className="bg-gray-50 rounded-lg p-4 border w-full">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-semibold text-center flex-1">{cat}</h3>
+                      {categories.length > 1 && (
+                        <button
+                          className="ml-2 text-xs text-red-500 hover:text-red-700"
+                          title={`Delete category '${cat}'`}
+                          onClick={() => {
+                            if (window.confirm(`Delete category '${cat}' and all its notes? This cannot be undone.`)) {
+                              setCategories(prev => {
+                                const updated = prev.filter(c => c !== cat)
+                                localStorage.setItem('dashboardNoteCategories', JSON.stringify(updated))
+                                return updated
+                              })
+                              setNotes(prev => prev.filter(n => n.category !== cat))
+                              // If the current noteCategory is being deleted, reset to first available
+                              if (noteCategory === cat && categories.length > 1) {
+                                setNoteCategory(categories.find(c => c !== cat) || '')
+                              }
+                              if (noteFilter === cat) {
+                                setNoteFilter('All')
+                              }
+                            }
+                          }}
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
+                    <ul className="space-y-2">
+                      {notes.filter(n => n.category === cat).length === 0 && (
+                        <li className="text-xs text-gray-400 text-center">No notes</li>
+                      )}
+                      {notes.filter(n => n.category === cat).map((note, idx) => (
+                        <li key={note.timestamp + '-' + idx} className="text-sm flex flex-col group relative">
+                          <span>{note.text}</span>
+                          <span className="text-xs text-gray-400 mt-1">{new Date(note.timestamp).toLocaleString()}</span>
+                          <button
+                            className="absolute top-1 right-1 text-xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity underline"
+                            title="Delete note"
+                            onClick={() => {
+                              setNotes(notes => notes.filter(n => n.timestamp !== note.timestamp))
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </li>
                       ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium mb-2">By Status</h4>
-                    <div className="space-y-2">
-                      {statusData.map((status, index) => (
-                        <div key={index} className="flex justify-between items-center">
-                          <span className="text-sm">{status.status}</span>
-                          <div className="text-right">
-                            <span className="font-medium">{status.count} projects</span>
-                            <div className="text-xs text-muted-foreground">
-                              ${(status.totalValue / 1000).toFixed(0)}K
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Geographic Distribution</CardTitle>
-              <CardDescription>Projects by state with total values</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {mapStateData.map((stateData, index) => (
-                  <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                    <div>
-                      <div className="font-medium">{stateCoordinates[stateData.state]?.name || stateData.state}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {stateData.count} project{stateData.count !== 1 ? "s" : ""}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
-                      <div className="text-sm text-muted-foreground">
-                        ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
-                      </div>
-                    </div>
+                    </ul>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-            </TabsContent>
-          </Tabs>
-        </TabsContent>
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )
