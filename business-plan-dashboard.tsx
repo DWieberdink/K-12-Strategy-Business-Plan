@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, MapPin, ChevronsUpDown } from "lucide-react"
+import { Upload, MapPin, ChevronsUpDown, ChevronDown } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -21,6 +21,8 @@ import {
   PieChart,
   Pie,
   Tooltip,
+  LabelList,
+  ComposedChart,
 } from "recharts"
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart"
 import * as d3 from 'd3'
@@ -33,6 +35,9 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import Link from 'next/link'
+import jsPDF from "jspdf"
+import html2canvas from "html2canvas"
+import { Input } from "@/components/ui/input"
 
 // Set Mapbox access token
 // d3.select("svg").attr("width", "100%").attr("height", "100%")
@@ -823,6 +828,7 @@ const parseCSV = (csvText: string) => {
 const StateMap = ({ projects, onStateClick }: { projects: any[]; onStateClick: (state: string) => void }) => {
   const mapContainer = useRef<HTMLDivElement>(null)
   const [mapError, setMapError] = useState<string | null>(null)
+  const [geoData, setGeoData] = useState<any>(null)
 
   // Aggregate projects by state
   const stateData = useMemo(() => {
@@ -840,111 +846,113 @@ const StateMap = ({ projects, onStateClick }: { projects: any[]; onStateClick: (
     return data
   }, [projects])
 
+  // Load GeoJSON on mount
   useEffect(() => {
-    if (!mapContainer.current) return
+    fetch('/USStates1.geojson')
+      .then(res => res.json())
+      .then(setGeoData)
+      .catch(err => setMapError('Failed to load US states GeoJSON'))
+  }, [])
+
+  useEffect(() => {
+    if (!mapContainer.current || !geoData) return
 
     const loadMap = () => {
       try {
-        // Clear previous content
-        d3.select(mapContainer.current).selectAll("*").remove()
-
-        // Set up the map dimensions
+        d3.select(mapContainer.current).selectAll('*').remove()
         const width = mapContainer.current?.clientWidth || 800
         const height = 500
-
-        // Create SVG
         const svg = d3.select(mapContainer.current)
-          .append("svg")
-          .attr("width", width)
-          .attr("height", height)
+          .append('svg')
+          .attr('width', width)
+          .attr('height', height)
 
-        // Create color scale
+        // D3 projection and path
+        const projection = d3.geoAlbersUsa().fitSize([width, height], geoData)
+        const path = d3.geoPath<any, any>().projection(projection)
+
+        // Color scale
         const maxValue = Math.max(...Array.from(stateData.values()).map(d => d.totalValue), 1)
-        const colorScale = d3.scaleSequential(d3.interpolateBlues)
-          .domain([0, maxValue])
+        const colorScale = d3.scaleSequential(d3.interpolateBlues).domain([0, maxValue])
 
-        // Create a simple state grid layout
-        const statesWithData = Array.from(stateData.entries())
-          .sort((a, b) => b[1].totalValue - a[1].totalValue)
-          .slice(0, 50) // Show top 50 states
-
-        const cols = Math.ceil(Math.sqrt(statesWithData.length))
-        const rows = Math.ceil(statesWithData.length / cols)
-        const cellWidth = width / cols
-        const cellHeight = height / rows
-
-        // Draw state rectangles
-        svg.selectAll("rect")
-          .data(statesWithData)
+        // Draw states
+        svg.selectAll('path')
+          .data(geoData.features)
           .enter()
-          .append("rect")
-          .attr("x", (d, i) => (i % cols) * cellWidth)
-          .attr("y", (d, i) => Math.floor(i / cols) * cellHeight)
-          .attr("width", cellWidth - 2)
-          .attr("height", cellHeight - 2)
-          .attr("fill", (d) => colorScale(d[1].totalValue))
-          .attr("stroke", "#fff")
-          .attr("stroke-width", 1)
-          .attr("cursor", "pointer")
-          .on("click", (event, d) => onStateClick(d[0]))
-          .on("mouseover", function(event, d) {
-            d3.select(this).attr("stroke-width", 3).attr("stroke", "#000")
-            
-            const tooltip = d3.select("body").append("div")
-              .attr("class", "tooltip")
-              .style("position", "absolute")
-              .style("background", "rgba(0,0,0,0.8)")
-              .style("color", "white")
-              .style("padding", "8px")
-              .style("border-radius", "4px")
-              .style("font-size", "12px")
-              .style("pointer-events", "none")
-              .style("z-index", "1000")
-            
+          .append('path')
+          .attr('d', (d: any) => path(d) as string)
+          .attr('fill', (d: any) => {
+            const stateCode = d.properties.STUSPS
+            const data = stateData.get(stateCode)
+            return data ? colorScale(data.totalValue) : '#e5e7eb'
+          })
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 1)
+          .attr('cursor', 'pointer')
+          .on('click', (event: any, d: any) => onStateClick(d.properties.STUSPS))
+          .on('mouseover', function(event: any, d: any) {
+            d3.select(this).attr('stroke-width', 3).attr('stroke', '#000')
+            const stateCode = d.properties.STUSPS
+            const data = stateData.get(stateCode)
+            const tooltip = d3.select('body').append('div')
+              .attr('class', 'tooltip')
+              .style('position', 'absolute')
+              .style('background', 'rgba(0,0,0,0.8)')
+              .style('color', 'white')
+              .style('padding', '8px')
+              .style('border-radius', '4px')
+              .style('font-size', '12px')
+              .style('pointer-events', 'none')
+              .style('z-index', '1000')
             tooltip.html(`
-              <strong>${stateCoordinates[d[0]]?.name || d[0]}</strong><br/>
-              Projects: ${d[1].count}<br/>
-              Total Value: $${(d[1].totalValue / 1000).toFixed(0)}K
+              <strong>${d.properties.NAME} (${stateCode})</strong><br/>
+              Projects: ${data ? data.count : 0}<br/>
+              Total Value: $${data ? (data.totalValue / 1000).toFixed(0) : 0}K
             `)
-              .style("left", (event.pageX + 10) + "px")
-              .style("top", (event.pageY - 10) + "px")
+              .style('left', (event.pageX + 10) + 'px')
+              .style('top', (event.pageY - 10) + 'px')
           })
-          .on("mouseout", function() {
-            d3.select(this).attr("stroke-width", 1).attr("stroke", "#fff")
-            d3.selectAll(".tooltip").remove()
+          .on('mousemove', function(event: any) {
+            d3.select('.tooltip')
+              .style('left', (event.pageX + 10) + 'px')
+              .style('top', (event.pageY - 10) + 'px')
+          })
+          .on('mouseout', function() {
+            d3.select(this).attr('stroke-width', 1).attr('stroke', '#fff')
+            d3.selectAll('.tooltip').remove()
           })
 
-        // Add state labels
-        svg.selectAll("text")
-          .data(statesWithData)
+        // Add state labels (optional, can be omitted for clarity on mobile)
+        svg.selectAll('text')
+          .data(geoData.features)
           .enter()
-          .append("text")
-          .attr("x", (d, i) => (i % cols) * cellWidth + cellWidth / 2)
-          .attr("y", (d, i) => Math.floor(i / cols) * cellHeight + cellHeight / 2)
-          .attr("text-anchor", "middle")
-          .attr("dominant-baseline", "middle")
-          .attr("font-size", "10px")
-          .attr("fill", "white")
-          .attr("pointer-events", "none")
-          .text((d) => stateCoordinates[d[0]]?.name || d[0])
+          .append('text')
+          .attr('transform', (d: any) => {
+            const centroid = path.centroid(d)
+            return `translate(${centroid[0]},${centroid[1]})`
+          })
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'middle')
+          .attr('font-size', '10px')
+          .attr('fill', '#222')
+          .attr('pointer-events', 'none')
+          .text((d: any) => d.properties.STUSPS)
 
         // Add title
-        svg.append("text")
-          .attr("x", width / 2)
-          .attr("y", 20)
-          .attr("text-anchor", "middle")
-          .attr("font-size", "16px")
-          .attr("font-weight", "bold")
-          .text("State Project Distribution")
-
+        svg.append('text')
+          .attr('x', width / 2)
+          .attr('y', 20)
+          .attr('text-anchor', 'middle')
+          .attr('font-size', '16px')
+          .attr('font-weight', 'bold')
+          .text('State Project Distribution')
       } catch (error) {
         console.error('Error creating map:', error)
         setMapError(`Failed to create map: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
-
     loadMap()
-  }, [stateData, onStateClick])
+  }, [stateData, geoData, onStateClick])
 
   return (
     <div className="w-full">
@@ -958,9 +966,8 @@ const StateMap = ({ projects, onStateClick }: { projects: any[]; onStateClick: (
       ) : (
         <div ref={mapContainer} className="w-full h-[500px] rounded-lg border shadow-sm" />
       )}
-
       {/* Enhanced Legend */}
-      <div className="mt-4 flex items-center justify-center gap-6 text-sm">
+      <div className="mt-4 flex items-center justify-center gap-6 text-sm flex-wrap">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-200 rounded border"></div>
           <span>No Projects</span>
@@ -988,7 +995,7 @@ const StateMap = ({ projects, onStateClick }: { projects: any[]; onStateClick: (
 
 // Default expense parameters
 const defaultExpenseParams = {
-  avgSalary: 85000,
+  avgSalary: 150000,
   healthcarePerEmployee: 18000,
   payrollTaxRate: 0.0765,
   unemploymentTaxRate: 0.006,
@@ -1000,6 +1007,7 @@ const defaultExpenseParams = {
   laptopPerEmployee: 2500,
   softwareLicensesPerEmployee: 2400,
   itSupportPerEmployee: 1200,
+  freelanceAnnual: 50000,
   accountingAnnual: 15000,
   legalAnnual: 8000,
   insuranceAnnual: 12000,
@@ -1094,7 +1102,8 @@ export default function BusinessPlanDashboard() {
   // Tab access control (must be first in function)
   const allTabs = [
     { key: 'strategy', label: 'Company Strategy' },
-    { key: 'financial', label: 'Financial Overview and Returns' },
+    { key: 'project-performance', label: 'Project Performance' },
+    { key: 'financial', label: 'Financial Projections' },
     { key: 'notetaker', label: 'Notetaker' },
   ]
   const ADMIN_PASSWORD = '12'
@@ -1108,8 +1117,11 @@ export default function BusinessPlanDashboard() {
   })
   const [isAdmin, setIsAdmin] = useState(false)
 
-  const [mainTab, setMainTab] = useState<'financial' | 'strategy' | 'notetaker'>('financial')
-  const [viewType, setViewType] = useState<'charts' | 'expenses' | 'revenue' | 'cashflow' | 'overview'>('charts')
+  // Add state for summary section collapse (must be before any early returns)
+  const [summaryOpen, setSummaryOpen] = useState(true)
+
+  const [mainTab, setMainTab] = useState<'financial' | 'strategy' | 'project-performance' | 'notetaker'>('strategy')
+  const [viewType, setViewType] = useState<'charts' | 'expenses' | 'revenue' | 'cashflow' | 'overview'>('expenses')
   const [strategyTab, setStrategyTab] = useState<'case' | 'proscons'>('case')
   const [selectedYear, setSelectedYear] = useState(2026)
   const [customFTE, setCustomFTE] = useState(3) // Manual FTE override
@@ -1117,7 +1129,7 @@ export default function BusinessPlanDashboard() {
   const [csvData, setCsvData] = useState<any[]>([])
   const [isUsingCsvData, setIsUsingCsvData] = useState(false)
   const [showMonthlyExpenses, setShowMonthlyExpenses] = useState(false)
-  const [startingCash, setStartingCash] = useState(50000)
+  const [startingCash, setStartingCash] = useState(300000)
 
   // Password protection state
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -1134,20 +1146,40 @@ export default function BusinessPlanDashboard() {
   const [chartViewType, setChartViewType] = useState<"projects" | "monthly" | "quarterly" | "growth" | "map">("projects")
 
   // Add state for CAGR
-  const [cagr, setCagr] = useState(0.10)
+  const [cagr, setCagr] = useState(0.20)
 
   // Add state for FTE mode, manual FTEs, and FTE growth rate
   const [fteMode, setFteMode] = useState<'manual' | 'growth'>('manual')
   const [manualFTEs, setManualFTEs] = useState<{ [year: number]: number }>({
-    2025: 1,
-    2026: 2,
-    2027: 3,
+    2026: 2, // Increased from 1 to make expenses higher
+    2027: 2,
     2028: 3,
     2029: 3,
     2030: 3,
+    2031: 3,
   })
   const [fteBase, setFteBase] = useState(1)
-  const [fteGrowth, setFteGrowth] = useState(0.10)
+  const [fteGrowth, setFteGrowth] = useState(0.05)
+
+  // Manual revenue input state
+  const [useManualRevenue, setUseManualRevenue] = useState(true)
+  const [manualRevenue, setManualRevenue] = useState<{ [year: number]: number }>({
+    2026: 200000,
+    2027: 500000,
+    2028: Math.round(500000 * 1.25),
+    2029: Math.round(500000 * 1.25 * 1.25),
+    2030: Math.round(500000 * 1.25 * 1.25 * 1.25),
+    2031: Math.round(500000 * 1.25 * 1.25 * 1.25 * 1.25),
+  })
+  const [manualRevenueGrowthRate, setManualRevenueGrowthRate] = useState(0.25)
+  const [manualRevenueGrowthStartYear, setManualRevenueGrowthStartYear] = useState(2026)
+  const [useQuarterlyBreakdown, setUseQuarterlyBreakdown] = useState(false)
+  const [quarterlyRevenue2026, setQuarterlyRevenue2026] = useState({
+    Q1: 375000, // 25% of 1.5M
+    Q2: 375000, // 25% of 1.5M
+    Q3: 375000, // 25% of 1.5M
+    Q4: 375000, // 25% of 1.5M
+  })
 
   // Notetaker state
   const [notes, setNotes] = useState<{ text: string; category: string; timestamp: number }[]>([])
@@ -1157,6 +1189,17 @@ export default function BusinessPlanDashboard() {
   const [newCategory, setNewCategory] = useState('')
   // Add a separate filter state for displaying notes
   const [noteFilter, setNoteFilter] = useState('All')
+
+  // Add state for collapsible expense groups
+  const [expenseGroupsCollapsed, setExpenseGroupsCollapsed] = useState<{ [key: string]: boolean }>({
+    personnel: true,
+    office: true,
+    technology: true,
+    professional: true,
+    business: true,
+    financing: true,
+    other: true,
+  })
 
   // Persist notes in localStorage
   useEffect(() => {
@@ -1339,7 +1382,7 @@ export default function BusinessPlanDashboard() {
     if (cumulativeData.length >= 1) {
       const lastYear = cumulativeData[cumulativeData.length - 1]
       const currentYear = Number.parseInt(lastYear.year)
-      for (let year = currentYear + 1; year <= 2030; year++) {
+      for (let year = currentYear + 1; year <= 2031; year++) {
         const yearsFromLast = year - currentYear
         const projectedValue = lastYear.cumulativeValue * Math.pow(1 + cagr, yearsFromLast)
         cumulativeData.push({
@@ -1353,7 +1396,7 @@ export default function BusinessPlanDashboard() {
       }
     }
     return cumulativeData
-  }, [processedData, cagr])
+  }, [processedData, cagr, projectData])
 
   // Map data for state summary
   const mapStateData = useMemo(() => {
@@ -1423,9 +1466,9 @@ export default function BusinessPlanDashboard() {
   const calculateExpenses = (fte: number, year: number) => {
     // Validate inputs
     const validFte = Math.max(1, Number(fte) || 1)
-    const validYear = Number(year) || 2025
+    const validYear = Number(year) || 2026
 
-    const baseYear = 2025
+    const baseYear = 2026
     const yearsFromBase = validYear - baseYear
     const inflationMultiplier = Math.pow(1 + (expenseParams.inflationRate || 0.03), yearsFromBase)
 
@@ -1490,37 +1533,53 @@ export default function BusinessPlanDashboard() {
       loanPayment: annualLoanPayment,
       year: validYear,
       fte: validFte,
+      freelance: expenseParams.freelanceAnnual * inflationMultiplier,
     }
   }
 
-  // Revenue projections
+  // Revenue projections based on actual contract data or manual input
   const calculateRevenue = (year: number) => {
-    const baseRevenue2025 = 4100000
-    const growthRate = 0.3
-    const yearsFromBase = year - 2025
-    return baseRevenue2025 * Math.pow(1 + growthRate, yearsFromBase)
+    // If manual revenue is enabled, use the manually entered values
+    if (useManualRevenue) {
+      return manualRevenue[year] || 0
+    }
+    
+    // Otherwise, calculate based on project data
+    // Get all projects that are active during this year
+    const activeProjects = projectData.filter(project => {
+      if (!project.startDate || !project.endDate || !project.totalFee) return false
+      
+      const startYear = new Date(project.startDate).getFullYear()
+      const endYear = new Date(project.endDate).getFullYear()
+      
+      // Project is active if the year falls within the contract period
+      return year >= startYear && year <= endYear
+    })
+    
+    // Calculate revenue for each project in this year
+    let totalRevenue = 0
+    activeProjects.forEach(project => {
+      const startYear = new Date(project.startDate).getFullYear()
+      const endYear = new Date(project.endDate).getFullYear()
+      const contractLength = endYear - startYear + 1 // +1 because both start and end year count
+      
+      // Revenue for this year = contract value / contract length
+      const yearlyRevenue = project.totalFee / contractLength
+      totalRevenue += yearlyRevenue
+    })
+    
+    return totalRevenue
   }
 
-  const calculateBillableRevenue = (fte: number, year: number) => {
-    const baseYear = 2025
-    const yearsFromBase = year - baseYear
-    const inflationMultiplier = Math.pow(1 + expenseParams.inflationRate, yearsFromBase)
-
-    const billableHoursPerFTE = 1600
-    const averageHourlyRate = 175 * inflationMultiplier
-
-    return fte * billableHoursPerFTE * averageHourlyRate
-  }
-
-  const projectionYears = [2025, 2026, 2027, 2028, 2029, 2030]
+  const projectionYears = [2026, 2027, 2028, 2029, 2030, 2031]
 
   // Helper to get FTE for a year
   const getFTE = (year: number) => {
     if (fteMode === 'manual') {
       return manualFTEs[year] || 1
     } else {
-      // Growth mode: FTE = base * (1 + growth)^(year - 2025)
-      return Math.round(fteBase * Math.pow(1 + fteGrowth, year - 2025))
+      // Growth mode: FTE = base * (1 + growth)^(year - 2026)
+      return Math.round(fteBase * Math.pow(1 + fteGrowth, year - 2026))
     }
   }
 
@@ -1530,7 +1589,6 @@ export default function BusinessPlanDashboard() {
       const fteForYear = getFTE(year)
       const expenses = calculateExpenses(fteForYear, year)
       const contractRevenue = calculateRevenue(year)
-      const billableRevenue = calculateBillableRevenue(fteForYear, year)
       const totalExpenses = Object.values(expenses).reduce((sum, val) => (typeof val === "number" ? sum + val : sum), 0)
       const netIncome = contractRevenue - totalExpenses
       const profitMargin = (netIncome / contractRevenue) * 100
@@ -1538,14 +1596,13 @@ export default function BusinessPlanDashboard() {
         year,
         fte: fteForYear,
         contractRevenue,
-        billableRevenue,
         totalExpenses,
         netIncome,
         profitMargin,
         expenses,
       }
     })
-  }, [expenseParams, fteMode, manualFTEs, fteBase, fteGrowth])
+  }, [expenseParams, fteMode, manualFTEs, fteBase, fteGrowth, projectData, useManualRevenue, manualRevenue])
 
   const expenseBreakdown = useMemo(() => {
     // Use custom FTE for the selected year calculation
@@ -1567,7 +1624,7 @@ export default function BusinessPlanDashboard() {
       },
       {
         category: "Professional Services",
-        amount: expenses.accounting + expenses.legal + expenses.insurance,
+        amount: expenses.accounting + expenses.legal + expenses.insurance + expenses.freelance,
         color: "hsl(var(--chart-2))",
       },
       { category: "Travel", amount: expenses.travel, color: "hsl(var(--chart-3))" },
@@ -1628,12 +1685,19 @@ export default function BusinessPlanDashboard() {
     return Array.from(combined.values()).sort((a, b) => a.month.localeCompare(b.month))
   }, [monthlyRevenueData, monthlyExpensesData])
 
+  // Refactored cash flow projections to show revenue, expenses, cash amount, and cumulative cash
   const cashFlowProjections = useMemo(() => {
     let cumulativeCash = startingCash
     return businessProjections.map((proj) => {
-      cumulativeCash += proj.netIncome
+      const revenue = proj.contractRevenue
+      const expenses = proj.totalExpenses
+      const cashAmount = revenue - expenses
+      cumulativeCash += cashAmount
       return {
         ...proj,
+        revenue,
+        expenses,
+        cashAmount,
         cumulativeCash,
       }
     })
@@ -1677,7 +1741,7 @@ export default function BusinessPlanDashboard() {
       setIsAuthenticated(true)
       setShowPasswordModal(false)
       setPasswordError('')
-      setAllowedTabs(['strategy', 'financial', 'notetaker'])
+      setAllowedTabs(allTabs.map(t => t.key))
       setIsAdmin(true)
     } else if (userAccess[password]) {
       setIsAuthenticated(true)
@@ -1714,9 +1778,35 @@ export default function BusinessPlanDashboard() {
     })
   }
 
+  // Place this after all useState/useMemo/useEffect hooks, but before any logic/returns
+  const yearlyExpenseBreakdown = useMemo(() => {
+    return projectionYears.map(year => {
+      const fte = getFTE(year)
+      const expenses = calculateExpenses(fte, year)
+      // Match the Expense Parameters UI groups
+      const breakdown = [
+        { category: "Personnel Costs", amount: expenses.salaries + expenses.healthcare + expenses.payrollTaxes + expenses.unemploymentTax + expenses.workersComp + expenses.retirement },
+        { category: "Office & Facilities", amount: expenses.officeRent + expenses.utilities + expenses.internetPhone },
+        { category: "Technology", amount: expenses.equipment + expenses.software + expenses.itSupport },
+        { category: "Professional Services", amount: expenses.accounting + expenses.legal + expenses.insurance + expenses.freelance },
+        { category: "Business Development", amount: expenses.marketing + expenses.travel + expenses.training },
+        { category: "Financing", amount: expenses.loanPayment },
+        { category: "Other", amount: expenses.officeSupplies + expenses.miscellaneous },
+      ]
+      const row: { [key: string]: string | number } = { year: year.toString() }
+      breakdown.forEach(item => {
+        row[item.category] = item.amount
+      })
+      // Add total for labels
+      const total = breakdown.reduce((sum, item) => sum + item.amount, 0)
+      row.total = total
+      return row
+    })
+  }, [projectionYears, fteMode, manualFTEs, fteBase, fteGrowth, expenseParams])
+
   // If not authenticated, show password modal
   if (!isAuthenticated) {
-    return (
+  return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
           <div className="text-center mb-6">
@@ -1762,637 +1852,1126 @@ export default function BusinessPlanDashboard() {
     )
   }
 
+  // Place this here:
+  const getQuarterStatus = (projects: string[]) => {
+    if (!projects || projects.length === 0) return 'no-value'
+    // Find the status of the majority of projects in this quarter
+    const statusCounts: Record<string, number> = {}
+    projects.forEach(name => {
+      const project = processedData.find(p => p.name === name)
+      const status = project?.status?.toLowerCase() || 'active'
+      statusCounts[status] = (statusCounts[status] || 0) + 1
+    })
+    const maxStatus = Object.entries(statusCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'active'
+    if (maxStatus.includes('await')) return 'awaiting'
+    if (maxStatus.includes('active')) return 'active'
+    return 'no-value'
+  }
+
+  // Build a list of all quarters and an 'Unspecified' bucket
+  const allQuarters = Array.from(new Set(
+    processedData
+      .filter(p => p.dateAwarded)
+      .map(p => getQuarter(p.dateAwarded))
+  )).sort();
+
+  let quarterlyStatusData = allQuarters.map(quarter => {
+    const projectsInQuarter = processedData.filter(p => getQuarter(p.dateAwarded) === quarter);
+    return {
+      quarter,
+      active: projectsInQuarter.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + p.totalFee, 0),
+      awaiting: projectsInQuarter.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + p.totalFee, 0),
+      completed: projectsInQuarter.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + p.totalFee, 0),
+      unspecified: projectsInQuarter.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + p.totalFee, 0),
+    }
+  });
+
+  // Add a bar for projects with no date/quarter
+  const unspecifiedProjects = processedData.filter(p => !p.dateAwarded);
+  if (unspecifiedProjects.length > 0) {
+    quarterlyStatusData.push({
+      quarter: 'Unspecified',
+      active: unspecifiedProjects.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + p.totalFee, 0),
+      awaiting: unspecifiedProjects.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + p.totalFee, 0),
+      completed: unspecifiedProjects.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + p.totalFee, 0),
+      unspecified: unspecifiedProjects.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + p.totalFee, 0),
+    });
+  }
+
+  // Sort quarterlyStatusData: chronological by year and quarter, 'Unspecified' always last
+  quarterlyStatusData = quarterlyStatusData.sort((a, b) => {
+    if (a.quarter === 'Unspecified') return 1;
+    if (b.quarter === 'Unspecified') return -1;
+    // Parse year and quarter
+    const [aQ, aYear] = a.quarter.split(' ');
+    const [bQ, bYear] = b.quarter.split(' ');
+    const aYearNum = parseInt(aYear);
+    const bYearNum = parseInt(bYear);
+    const aQuarterNum = parseInt(aQ.replace('Q', ''));
+    const bQuarterNum = parseInt(bQ.replace('Q', ''));
+    if (aYearNum !== bYearNum) return aYearNum - bYearNum;
+    return aQuarterNum - bQuarterNum;
+  });
+
+  // Before the return statement in BusinessPlanDashboard
+  const personnelExpenses1FTE = calculateExpenses(1, selectedYear)
+  const personnelSubtotal = personnelExpenses1FTE.salaries + personnelExpenses1FTE.healthcare + personnelExpenses1FTE.payrollTaxes + personnelExpenses1FTE.unemploymentTax + personnelExpenses1FTE.workersComp + personnelExpenses1FTE.retirement
+
+  const officeSubtotal = expenseParams.officeRentPerMonth * 12 + expenseParams.utilitiesPerMonth * 12 + expenseParams.internetPhonePerMonth * 12
+  const techSubtotal = expenseParams.laptopPerEmployee + expenseParams.softwareLicensesPerEmployee + expenseParams.itSupportPerEmployee
+  const profSubtotal = expenseParams.freelanceAnnual + expenseParams.accountingAnnual + expenseParams.legalAnnual + expenseParams.insuranceAnnual
+  const bizSubtotal = expenseParams.marketingAnnual + expenseParams.travelPerEmployee + expenseParams.conferencesTrainingPerEmployee
+  const financeSubtotal = expenseParams.loanAmount > 0 ? (expenseParams.loanAmount * expenseParams.loanInterestRate / 12) * Math.pow(1 + expenseParams.loanInterestRate / 12, expenseParams.loanTermYears * 12) / (Math.pow(1 + expenseParams.loanInterestRate / 12, expenseParams.loanTermYears * 12) - 1) : 0
+  const otherSubtotal = expenseParams.officeSuppliesPerEmployee * 12 + expenseParams.miscellaneousPerEmployee * 12
+
+  const personnelHeader = (
+    <button
+      type="button"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, personnel: !prev.personnel }))}
+    >
+      <span>Personnel Costs</span>
+      <span className="ml-auto text-xs font-normal text-blue-900">${personnelSubtotal.toLocaleString()}</span>
+      <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.personnel ? 'rotate-180' : ''}`} />
+    </button>
+  )
+  const officeHeader = (
+    <button
+      type="button"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, office: !prev.office }))}
+    >
+      <span>Office & Facilities</span>
+      <span className="ml-auto text-xs font-normal text-blue-900">${officeSubtotal.toLocaleString()}</span>
+      <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.office ? 'rotate-180' : ''}`} />
+    </button>
+  )
+  const techHeader = (
+    <button
+      type="button"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, technology: !prev.technology }))}
+    >
+      <span>Technology</span>
+      <span className="ml-auto text-xs font-normal text-blue-900">${techSubtotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+      <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.technology ? 'rotate-180' : ''}`} />
+    </button>
+  )
+  const profHeader = (
+    <button
+      type="button"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, professional: !prev.professional }))}
+    >
+      <span>Professional Services</span>
+      <span className="ml-auto text-xs font-normal text-blue-900">${profSubtotal.toLocaleString()}</span>
+      <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.professional ? 'rotate-180' : ''}`} />
+    </button>
+  )
+  const bizHeader = (
+    <button
+      type="button"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, business: !prev.business }))}
+    >
+      <span>Business Development</span>
+      <span className="ml-auto text-xs font-normal text-blue-900">${bizSubtotal.toLocaleString()}</span>
+      <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.business ? 'rotate-180' : ''}`} />
+    </button>
+  )
+  const financeHeader = (
+    <button
+      type="button"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, financing: !prev.financing }))}
+    >
+      <span>Financing</span>
+      <span className="ml-auto text-xs font-normal text-blue-900">${financeSubtotal.toLocaleString()}</span>
+      <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.financing ? 'rotate-180' : ''}`} />
+    </button>
+  )
+  const otherHeader = (
+    <button
+      type="button"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, other: !prev.other }))}
+    >
+      <span>Other</span>
+      <span className="ml-auto text-xs font-normal text-blue-900">${otherSubtotal.toLocaleString()}</span>
+      <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.other ? 'rotate-180' : ''}`} />
+    </button>
+  )
+
+  // PDF export handler
+  const handleExportCurrentTabPDF = async () => {
+    const input = document.body // Export the visible dashboard/tab
+    const pdf = new jsPDF({ unit: "px", format: "a4" })
+    const canvas = await html2canvas(input, { scale: 2 })
+    const imgData = canvas.toDataURL("image/png")
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const imgProps = pdf.getImageProperties(imgData)
+    const pdfWidth = pageWidth
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
+    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight)
+    pdf.save("dashboard.pdf")
+  }
+
+  const handleExportAllTabsPDF = async () => {
+    const originalTab = mainTab
+    const pdf = new jsPDF({ unit: "px", format: "a4" })
+    for (const tab of allTabs) {
+      setMainTab(tab.key)
+      await new Promise((resolve) => setTimeout(resolve, 800)) // Wait for tab to render
+      const input = document.body
+      const canvas = await html2canvas(input, { scale: 2 })
+      const imgData = canvas.toDataURL("image/png")
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const imgProps = pdf.getImageProperties(imgData)
+      const pdfWidth = pageWidth
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
+      if (tab !== allTabs[0]) pdf.addPage()
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight)
+    }
+    setMainTab(originalTab)
+    pdf.save("dashboard-all-tabs.pdf")
+  }
+
   return (
-    <div className="w-full h-full space-y-4">
-      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as 'financial' | 'strategy' | 'notetaker')} className="h-full flex flex-col">
-        <TabsList className="flex w-full mb-4 gap-2 items-center">
+    <div className="w-full h-full space-y-4 px-2 md:px-6 pb-24 md:pb-8">
+      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as 'financial' | 'strategy' | 'project-performance' | 'notetaker')} className="h-full flex flex-col">
+        <TabsList className="flex w-full mb-4 gap-2 items-center flex-wrap overflow-visible bg-white/90 border border-gray-200 shadow-sm rounded-lg h-14 min-h-[56px] px-2">
+          {/* Tab triggers */}
           {allTabs.filter(tab => allowedTabs.includes(tab.key)).map(tab => (
-            <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>
+            <TabsTrigger
+              key={tab.key}
+              value={tab.key}
+              className={`min-w-[120px] md:min-w-[160px] text-sm md:text-base px-4 py-3 rounded-lg transition-colors duration-150 font-semibold h-12 flex items-center justify-center
+                data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md
+                data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 hover:bg-blue-50 hover:text-blue-700
+              `}
+            >
+              {tab.label}
+            </TabsTrigger>
           ))}
-          {isAdmin && (
-            <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2 h-full">
+            {/* Upload CSV button (light green, same height as Admin) */}
+            <label htmlFor="csv-upload" className="h-full flex items-center">
+              <Button
+                variant="outline"
+                size="sm"
+                className="cursor-pointer bg-green-100 text-green-800 hover:bg-green-200 border-green-200 h-12 px-4 flex items-center"
+                asChild
+              >
+                <span className="flex items-center h-full">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload CSV
+                </span>
+              </Button>
+              <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
+            </label>
+            {isAdmin && (
               <Link href="/admin" passHref legacyBehavior>
-                <a className="inline-block px-4 py-2 border rounded bg-white hover:bg-gray-100 text-sm font-medium text-gray-700 border-gray-300 transition">Admin</a>
-              </Link>
-            </div>
-          )}
+                <a className="inline-block px-3 md:px-4 py-2 border rounded bg-red-600 hover:bg-red-700 text-white font-semibold border-red-700 shadow transition whitespace-nowrap h-12 flex items-center justify-center" style={{ minHeight: '3rem' }}>Admin</a>
+            </Link>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="cursor-pointer bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200 h-12 px-4 flex items-center"
+                >
+                  <span className="flex items-center h-full">
+                    Export to PDF
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportCurrentTabPDF}>
+                  Export Current Tab
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportAllTabsPDF}>
+                  Export All Tabs
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </TabsList>
         {allowedTabs.includes('strategy') && (
-          <TabsContent value="strategy">
-            <Tabs value={strategyTab} onValueChange={(value) => setStrategyTab(value as 'case' | 'proscons')} className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="case">A Case for...</TabsTrigger>
-                <TabsTrigger value="proscons">Business Model Comparison</TabsTrigger>
-              </TabsList>
-              <TabsContent value="case">
-                <div className="p-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Pros: ...Becoming Independent? */}
-                    <div className="bg-white rounded-lg shadow p-6 border">
-                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...Becoming Independent?</h3>
-                      <div className="mb-2 font-semibold text-green-700">Pros:</div>
-                      <div className="space-y-4 mb-4">
-                        <div>
-                          <div className="font-semibold">Full control over strategy</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Set our own priorities</li>
-                            <li>Make decisions quickly</li>
-                            <li>Align directly with our mission</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Greater financial upside</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Lower overhead</li>
-                            <li>More competitive pricing</li>
-                            <li>Full ownership of profit and equity growth</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Freedom to innovate</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Explore new markets</li>
-                            <li>Test bold ideas</li>
-                            <li>Adapt quickly—without external constraints</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Increased flexibility</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Use the systems, tools, and workflows that best fit our needs</li>
-                            <li>No one-size-fits-all limitations</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Culture on our terms</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Build a team based on our values</li>
-                            <li>Shape a work environment that reflects who we are</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Ownership of brand and identity</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Develop a reputation that's fully ours</li>
-                            <li>Distinct in the market</li>
-                            <li>Aligned with our vision</li>
-                          </ul>
-                        </div>
+        <TabsContent value="strategy">
+          <Tabs value={strategyTab} onValueChange={(value) => setStrategyTab(value as 'case' | 'proscons')} className="h-full flex flex-col">
+              <TabsList className="grid w-full grid-cols-2 bg-white/90 border border-gray-200 shadow-sm rounded-lg h-14 min-h-[56px] px-2 mb-4">
+              <TabsTrigger
+                value="case"
+                className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
+                  data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+              >
+                A Case for...
+              </TabsTrigger>
+              <TabsTrigger
+                value="proscons"
+                className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
+                  data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
+                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+              >
+                Business Model Comparison
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="case">
+              <div className="p-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Pros: ...Becoming Independent? */}
+                  <div className="bg-white rounded-lg shadow p-6 border">
+                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...Becoming Independent?</h3>
+                    <div className="mb-2 font-semibold text-green-700">Pros:</div>
+                    <div className="space-y-4 mb-4">
+                      <div>
+                        <div className="font-semibold">Full control over strategy</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Set our own priorities</li>
+                          <li>Make decisions quickly</li>
+                          <li>Align directly with our mission</li>
+                        </ul>
                       </div>
-                    </div>
-                    {/* Cons: ...not Becoming Independent */}
-                    <div className="bg-white rounded-lg shadow p-6 border">
-                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...not Becoming Independent</h3>
-                      <div className="mb-2 font-semibold text-red-700">Cons:</div>
-                      <div className="space-y-4">
-                        <div>
-                          <div className="font-semibold">Higher Financial Risk</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Without shared resources or backing</li>
-                            <li>We assume full responsibility for cash flow, payroll, and liabilities</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Need to Build Infrastructure</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>HR, IT, accounting, legal, insurance</li>
-                            <li>All overhead functions must be set up, maintained, and funded internally or bought</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Resource Gaps at Launch</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Limited access to specialized talent (e.g., sustainability, legal, architecture)</li>
-                            <li>Unless we hire or contract independently</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Slower Ramp-Up Time</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Establishing systems, hiring staff, and building brand recognition takes time and effort</li>
-                            <li>Slowing early momentum</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Administrative Burden on Leadership</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>Time spent on operations may reduce focus on business development</li>
-                            <li>Client relationships</li>
-                            <li>Strategic growth</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-semibold">No Safety Net</div>
-                          <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
-                            <li>In lean periods or downturns</li>
-                            <li>There's no parent organization to absorb the impact</li>
-                          </ul>
-                        </div>
+                      <div>
+                        <div className="font-semibold">Greater financial upside</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Lower overhead</li>
+                          <li>More competitive pricing</li>
+                          <li>Full ownership of profit and equity growth</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Freedom to innovate</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Explore new markets</li>
+                          <li>Test bold ideas</li>
+                          <li>Adapt quickly—without external constraints</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Increased flexibility</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Use the systems, tools, and workflows that best fit our needs</li>
+                          <li>No one-size-fits-all limitations</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Culture on our terms</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Build a team based on our values</li>
+                          <li>Shape a work environment that reflects who we are</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Ownership of brand and identity</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Develop a reputation that's fully ours</li>
+                          <li>Distinct in the market</li>
+                          <li>Aligned with our vision</li>
+                        </ul>
                       </div>
                     </div>
                   </div>
-                </div>
-              </TabsContent>
-              <TabsContent value="proscons">
-                <div className="p-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Affiliate Model */}
-                    <div className="bg-white rounded-lg shadow p-6 border">
-                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Affiliate Model</h3>
-                      <div className="mb-2 font-semibold text-green-700">Pros:</div>
-                      <ul className="list-disc list-inside mb-4 text-sm space-y-1">
-                        <li>Shared overhead expenses (HR, IT, Accounting)</li>
-                        <li>Access to specialized expertise (e.g., Sustainability, Architecture)</li>
-                        <li>Lower financial risk</li>
-                      </ul>
-                      <div className="mb-2 font-semibold text-red-700">Cons:</div>
-                      <ul className="list-disc list-inside text-sm space-y-1">
-                        <li>Limited control over IT systems and infrastructure</li>
-                        <li>Constrained decision-making authority</li>
-                        <li>Lower share of financial upside/reward</li>
-                      </ul>
-                    </div>
-                    {/* Independent Model */}
-                    <div className="bg-white rounded-lg shadow p-6 border">
-                      <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Independent Model</h3>
-                      <div className="mb-2 font-semibold text-green-700">Pros:</div>
-                      <ul className="list-disc list-inside mb-4 text-sm space-y-1">
-                        <li>Full control over business operations and strategy</li>
-                        <li>Maximum flexibility in tools, systems, and staffing</li>
-                        <li>Potential for higher financial rewards</li>
-                      </ul>
-                      <div className="mb-2 font-semibold text-red-700">Cons:</div>
-                      <ul className="list-disc list-inside text-sm space-y-1">
-                        <li>Must build and manage all overhead functions (HR, IT, Accounting)</li>
-                        <li>Greater financial risk and responsibility</li>
-                        <li>Requires investment in building internal capacity from scratch</li>
-                      </ul>
+                  {/* Cons: ...not Becoming Independent */}
+                  <div className="bg-white rounded-lg shadow p-6 border">
+                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...not Becoming Independent</h3>
+                    <div className="mb-2 font-semibold text-red-700">Cons:</div>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="font-semibold">Higher Financial Risk</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Without shared resources or backing</li>
+                          <li>We assume full responsibility for cash flow, payroll, and liabilities</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Need to Build Infrastructure</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>HR, IT, accounting, legal, insurance</li>
+                          <li>All overhead functions must be set up, maintained, and funded internally or bought</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Resource Gaps at Launch</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Limited access to specialized talent (e.g., sustainability, legal, architecture)</li>
+                          <li>Unless we hire or contract independently</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Slower Ramp-Up Time</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Establishing systems, hiring staff, and building brand recognition takes time and effort</li>
+                          <li>Slowing early momentum</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Administrative Burden on Leadership</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>Time spent on operations may reduce focus on business development</li>
+                          <li>Client relationships</li>
+                          <li>Strategic growth</li>
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-semibold">No Safety Net</div>
+                        <ul className="list-[circle] ml-6 space-y-0.5 text-sm">
+                          <li>In lean periods or downturns</li>
+                          <li>There's no parent organization to absorb the impact</li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-        )}
-        {allowedTabs.includes('financial') && (
-          <TabsContent value="financial">
-            <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'charts' | 'expenses' | 'revenue' | 'cashflow' | 'overview')} className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="charts">Project Performance</TabsTrigger>
-                <TabsTrigger value="expenses">Expenses</TabsTrigger>
-                <TabsTrigger value="revenue">Revenue</TabsTrigger>
-                <TabsTrigger value="cashflow">Cash Flow</TabsTrigger>
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-              </TabsList>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
-                  <label htmlFor="csv-upload">
-                    <Button variant="outline" size="sm" className="cursor-pointer" asChild>
-                      <span>
-                        <Upload className="w-4 h-4 mr-2" />
-                        Upload CSV
-                      </span>
-                    </Button>
-                  </label>
                 </div>
               </div>
-
-              <TabsContent value="charts" className="flex-1 overflow-auto space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-primary">{processedData.length}</div>
-                      <p className="text-xs text-muted-foreground">Active projects in pipeline</p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Total Contract Value</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-green-600">
-                        ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / 1000000).toFixed(1)}M
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Combined project value ({processedData.filter(p => p.totalFee > 0).length} with fees)
-                      </p>
-                      {/* Debug info */}
-                      <div className="text-xs text-gray-500 mt-1">
-                        Raw total: ${processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Average Project Size</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-blue-600">
-                        ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.totalFee > 0).length || 1) / 1000).toFixed(0)}K
-                      </div>
-                      <p className="text-xs text-muted-foreground">Mean contract value (excluding $0 fees)</p>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">States Covered</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-purple-600">
-                        {new Set(processedData.filter(p => p.state && p.state.trim()).map((p) => p.state)).size}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Geographic reach ({processedData.filter(p => !p.state || !p.state.trim()).length} unknown)
-                      </p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-4 mt-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant={chartViewType === "projects" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setChartViewType("projects")}
-                    >
-                      By Project
-                    </Button>
-
-                    <Button
-                      variant={chartViewType === "monthly" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setChartViewType("monthly")}
-                    >
-                      Monthly Revenue
-                    </Button>
-
-                    <Button
-                      variant={chartViewType === "quarterly" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setChartViewType("quarterly")}
-                    >
-                      Quarterly Awards
-                    </Button>
-                    <Button
-                      variant={chartViewType === "growth" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setChartViewType("growth")}
-                    >
-                      Growth Trend
-                    </Button>
-                    <Button
-                      variant={chartViewType === "map" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setChartViewType("map")}
-                    >
-                      <MapPin className="w-4 h-4 mr-2" />
-                      Map View
-                    </Button>
+            </TabsContent>
+            <TabsContent value="proscons">
+              <div className="p-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Affiliate Model */}
+                  <div className="bg-white rounded-lg shadow p-6 border">
+                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Affiliate Model</h3>
+                    <div className="mb-2 font-semibold text-green-700">Pros:</div>
+                    <ul className="list-disc list-inside mb-4 text-sm space-y-1">
+                      <li>Shared overhead expenses (HR, IT, Accounting)</li>
+                      <li>Access to specialized expertise (e.g., Sustainability, Architecture)</li>
+                      <li>Lower financial risk</li>
+                    </ul>
+                    <div className="mb-2 font-semibold text-red-700">Cons:</div>
+                    <ul className="list-disc list-inside text-sm space-y-1">
+                      <li>Limited control over IT systems and infrastructure</li>
+                      <li>Constrained decision-making authority</li>
+                      <li>Lower share of financial upside/reward</li>
+                    </ul>
+                  </div>
+                  {/* Independent Model */}
+                  <div className="bg-white rounded-lg shadow p-6 border">
+                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Independent Model</h3>
+                    <div className="mb-2 font-semibold text-green-700">Pros:</div>
+                    <ul className="list-disc list-inside mb-4 text-sm space-y-1">
+                      <li>Full control over business operations and strategy</li>
+                      <li>Maximum flexibility in tools, systems, and staffing</li>
+                      <li>Potential for higher financial rewards</li>
+                    </ul>
+                    <div className="mb-2 font-semibold text-red-700">Cons:</div>
+                    <ul className="list-disc list-inside text-sm space-y-1">
+                      <li>Must build and manage all overhead functions (HR, IT, Accounting)</li>
+                      <li>Greater financial risk and responsibility</li>
+                      <li>Requires investment in building internal capacity from scratch</li>
+                    </ul>
                   </div>
                 </div>
-                <Card>
-                  <CardHeader></CardHeader>
-                  <CardContent>
-                    {chartViewType === "map" && (
-                      <div className="flex gap-4">
-                        <div className="flex-1 space-y-4">
-                          <StateMap projects={processedData} onStateClick={handleStateClick} />
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <Card>
-                              <CardHeader>
-                                <CardTitle>Projects by State</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <div className="space-y-3">
-                                  {mapStateData.slice(0, 6).map((stateData, index) => (
-                                    <div
-                                      key={index}
-                                      className="flex justify-between items-center p-3 bg-muted rounded-lg cursor-pointer hover:bg-muted/80"
-                                      onClick={() => handleStateClick(stateData.state)}
-                                    >
-                                      <div>
-                                        <div className="font-medium">
-                                          {stateCoordinates[stateData.state]?.name || stateData.state} ({stateData.state})
-                                        </div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {stateData.count} project{stateData.count !== 1 ? "s" : ""}
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
-                                        <div className="text-sm text-muted-foreground">
-                                          ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </CardContent>
-                            </Card>
-
-                            <Card>
-                              <CardHeader>
-                                <CardTitle>Practice Areas</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <div className="space-y-3">
-                                  {practiceAreaData.slice(0, 5).map((areaData, index) => (
-                                    <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                                      <div>
-                                        <div className="font-medium">{areaData.area}</div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {areaData.count} project{areaData.count !== 1 ? "s" : ""}
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <div className="font-bold">${(areaData.totalValue / 1000).toFixed(0)}K</div>
-                                        <div className="text-sm text-muted-foreground">
-                                          ${(areaData.totalValue / areaData.count / 1000).toFixed(0)}K avg
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </CardContent>
-                            </Card>
-
-                            <Card>
-                              <CardHeader>
-                                <CardTitle>Project Status</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <div className="space-y-3">
-                                  {statusData.map((statusItem, index) => (
-                                    <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                                      <div>
-                                        <div className="font-medium">{statusItem.status}</div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {statusItem.count} project{statusItem.count !== 1 ? "s" : ""}
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <div className="font-bold">${(statusItem.totalValue / 1000).toFixed(0)}K</div>
-                                        <div className="text-sm text-muted-foreground">
-                                          ${(statusItem.totalValue / statusItem.count / 1000).toFixed(0)}K avg
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          </div>
-
-                          {studioData.length > 1 && (
-                            <Card>
-                              <CardHeader>
-                                <CardTitle>Studio Performance</CardTitle>
-                              </CardHeader>
-                              <CardContent>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                  {studioData.map((studioItem, index) => (
-                                    <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                                      <div>
-                                        <div className="font-medium">{studioItem.studio}</div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {studioItem.count} project{studioItem.count !== 1 ? "s" : ""}
-                                        </div>
-                                      </div>
-                                      <div className="text-right">
-                                        <div className="font-bold">${(studioItem.totalValue / 1000).toFixed(0)}K</div>
-                                        <div className="text-sm text-muted-foreground">
-                                          ${(studioItem.totalValue / studioItem.count / 1000).toFixed(0)}K avg
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+        )}
+        {allowedTabs.includes('project-performance') && (
+        <TabsContent value="project-performance">
+          <div className="flex-1 overflow-auto space-y-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <button
+                    className="px-3 py-2 rounded bg-blue-100 text-blue-800 font-semibold hover:bg-blue-200 transition"
+                    onClick={() => setSummaryOpen(o => !o)}
+                    aria-expanded={summaryOpen}
+                    aria-controls="summary-cards"
+                  >
+                    {summaryOpen ? "Hide" : "Show"} Summary
+                  </button>
+                </div>
+                <div
+                  id="summary-cards"
+                  className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 transition-all duration-300 overflow-hidden ${summaryOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}
+                  style={{ transitionProperty: 'max-height, opacity' }}
+                >
+                  {/* Total Projects Card */}
+                  <Card className="w-full">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
+                      <CardTitle className="text-sm md:text-base font-medium">Total Projects</CardTitle>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <div className="text-2xl font-bold text-primary">{processedData.length}</div>
+                <p className="text-xs text-muted-foreground">Active projects in pipeline</p>
+                      {/* Sub-counts for Active, Awaiting, Unspecified, Completed */}
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-blue-700">Active:</span>
+                          <span className="font-mono">{processedData.filter(p => p.status?.toLowerCase().includes('active')).length}</span>
                         </div>
-                        <div className="w-[200px] space-y-2">
-                          <MultiSelectDropdown
-                            options={states}
-                            selected={filterState}
-                            onChange={setFilterState}
-                            title="States"
-                          />
-                          <MultiSelectDropdown
-                            options={practiceAreas}
-                            selected={filterPracticeArea}
-                            onChange={setFilterPracticeArea}
-                            title="Areas"
-                          />
-                          <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-orange-700">Awaiting:</span>
+                          <span className="font-mono">{processedData.filter(p => p.status?.toLowerCase().includes('await')).length}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-700">Unspecified:</span>
+                          <span className="font-mono">{processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).length}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-green-700">Completed:</span>
+                          <span className="font-mono">{processedData.filter(p => p.status?.toLowerCase().includes('completed')).length}</span>
                         </div>
                       </div>
-                    )}
-
-                    {chartViewType === "growth" && growthTrendData.length > 0 && (
-                      <div className="mb-4 p-4 bg-muted rounded-lg">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <div className="font-semibold">2023 Starting Value</div>
-                            <div className="text-2xl font-bold text-primary">
-                              ${(growthTrendData[0]?.cumulativeValue / 1000).toFixed(0)}K
-                            </div>
-                          </div>
-                          <div>
-                            <div className="font-semibold">Current Value (2025)</div>
-                            <div className="text-2xl font-bold text-green-600">
-                              $
-                              {(
-                                growthTrendData.find((d) => d.year === "2025" && !d.isProjected)?.cumulativeValue / 1000000 ||
-                                growthTrendData[growthTrendData.findIndex((d) => d.isProjected) - 1]?.cumulativeValue /
-                                  1000000 ||
-                                0
-                              ).toFixed(1)}
-                              M
-                            </div>
-                          </div>
-                          <div>
-                            <div className="font-semibold flex items-center gap-2">Growth Rate (CAGR)
-                              <input
-                                type="number"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                value={cagr}
-                                onChange={e => setCagr(Number(e.target.value))}
-                                className="ml-2 w-20 px-2 py-1 border rounded text-sm"
-                              />
-                            </div>
-                            <div className="text-2xl font-bold text-blue-600">{(cagr * 100).toFixed(1)}%</div>
-                          </div>
-                          <div>
-                            <div className="font-semibold">2030 Projection</div>
-                            <div className="text-2xl font-bold text-purple-600">
-                              ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toFixed(1)}M
-                            </div>
-                          </div>
+              </CardContent>
+            </Card>
+                  {/* Total Contract Value Card */}
+                  <Card className="w-full">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
+                      <CardTitle className="text-sm md:text-base font-medium">Total Contract Value</CardTitle>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <div className="text-2xl font-bold text-green-600">
+                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / 1000000).toFixed(0)}M
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Combined project value ({processedData.filter(p => p.totalFee > 0).length} with fees)
+                </p>
+                      {/* Sub-data for Active, Awaiting, Unspecified, Completed */}
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-blue-700">Active:</span>
+                          <span className="font-mono">${processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-orange-700">Awaiting:</span>
+                          <span className="font-mono">${processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-700">Unspecified:</span>
+                          <span className="font-mono">${processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-green-700">Completed:</span>
+                          <span className="font-mono">${processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
                         </div>
                       </div>
-                    )}
-
-                    {chartViewType !== "growth" && chartViewType !== "map" && <div className="mb-4 p-4 bg-muted rounded-lg" />}
-
-                    {chartViewType === "projects" && (
-                      <>
-                        <div className="flex gap-2 mb-4">
-                          <Button
-                            variant={sortBy === "fee" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => {
-                              if (sortBy === "fee") {
-                                setSortReverse(!sortReverse)
-                              } else {
-                                setSortBy("fee")
-                                setSortReverse(false)
-                              }
-                            }}
-                          >
-                            Sort by Fee {sortBy === "fee" && (sortReverse ? "↑" : "↓")}
-                          </Button>
-                          <Button
-                            variant={sortBy === "date" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => {
-                              if (sortBy === "date") {
-                                setSortReverse(!sortReverse)
-                              } else {
-                                setSortBy("date")
-                                setSortReverse(false)
-                              }
-                            }}
-                          >
-                            Sort by Date {sortBy === "date" && (sortReverse ? "↑" : "↓")}
-                          </Button>
-                          <Button
-                            variant={sortBy === "name" ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => {
-                              if (sortBy === "name") {
-                                setSortReverse(!sortReverse)
-                              } else {
-                                setSortBy("name")
-                                setSortReverse(false)
-                              }
-                            }}
-                          >
-                            Sort by Name {sortBy === "name" && (sortReverse ? "↑" : "↓")}
-                          </Button>
+                <div className="text-xs text-gray-500 mt-1">
+                  Raw total: ${processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}
+                </div>
+              </CardContent>
+            </Card>
+                  {/* Average Project Size Card */}
+                  <Card className="w-full">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
+                      <CardTitle className="text-sm md:text-base font-medium">Average Project Size</CardTitle>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <div className="text-2xl font-bold text-blue-600">
+                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.totalFee > 0).length || 1) / 1000).toFixed(0)}K
+                </div>
+                <p className="text-xs text-muted-foreground">Mean contract value (excluding $0 fees)</p>
+                      {/* Sub-averages for Active, Awaiting, Unspecified, Completed */}
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-blue-700">Active:</span>
+                          <span className="font-mono">${(processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('active') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
                         </div>
-                        <div className="flex gap-4">
-                          <ChartContainer
-                            config={{
-                              fee: {
-                                label: "Project Fee",
-                                color: "hsl(var(--chart-1))",
-                              },
-                            }}
-                            className="h-[600px]"
-                          >
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={processedData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="shortName" angle={-45} textAnchor="end" height={120} fontSize={12} />
-                                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
-                                <ChartTooltip
-                                  content={({ active, payload, label }) => {
-                                    if (active && payload && payload.length) {
-                                      const data = payload[0].payload
-                                      return (
-                                        <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                          <p className="font-semibold">{data.name}</p>
-                                          <p className="text-sm text-muted-foreground">State: {data.state}</p>
-                                          <p className="text-sm text-muted-foreground">Start: {data.startDate}</p>
-                                          <p className="text-sm text-muted-foreground">End: {data.endDate}</p>
-                                          <p className="text-sm text-muted-foreground">Status: {data.projectStatus}</p>
-                                          <p className="text-lg font-bold text-primary">${data.totalFee.toLocaleString()}</p>
-                                        </div>
-                                      )
-                                    }
-                                    return null
-                                  }}
-                                />
-                                <Bar dataKey="totalFee" radius={[4, 4, 0, 0]}>
-                                  {processedData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.statusColor} />
-                                  ))}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </ChartContainer>
-                          <div className="w-[200px] space-y-2">
-                            <MultiSelectDropdown
-                              options={states}
-                              selected={filterState}
-                              onChange={setFilterState}
-                              title="States"
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-orange-700">Awaiting:</span>
+                          <span className="font-mono">${(processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('await') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-700">Unspecified:</span>
+                          <span className="font-mono">${(processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-green-700">Completed:</span>
+                          <span className="font-mono">${(processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                        </div>
+                      </div>
+              </CardContent>
+            </Card>
+                  {/* States Covered Card */}
+                  <Card className="w-full">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
+                      <CardTitle className="text-sm md:text-base font-medium">States Covered</CardTitle>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <div className="text-2xl font-bold text-purple-600">
+                  {new Set(processedData.filter(p => p.state && p.state.trim()).map((p) => p.state)).size}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Geographic reach ({processedData.filter(p => !p.state || !p.state.trim()).length} unknown)
+                </p>
+                      {/* Sub-counts for Active, Awaiting, Unspecified, Completed */}
+                      <div className="mt-2 space-y-1 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-blue-700">Active:</span>
+                          <span className="font-mono">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('active') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+          </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-orange-700">Awaiting:</span>
+                          <span className="font-mono">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('await') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-700">Unspecified:</span>
+                          <span className="font-mono">{new Set(processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-green-700">Completed:</span>
+                          <span className="font-mono">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+                        </div>
+                </div>
+              </CardContent>
+            </Card>
+                </div>
+
+          <div className="flex flex-wrap items-center gap-4 mt-4">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={chartViewType === "projects" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setChartViewType("projects")}
+                  >
+                    By Project
+                  </Button>
+
+                  <Button
+                    variant={chartViewType === "monthly" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setChartViewType("monthly")}
+                  >
+                    Monthly Revenue
+                  </Button>
+
+                  <Button
+                    variant={chartViewType === "quarterly" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setChartViewType("quarterly")}
+                  >
+                    Quarterly Awards
+                  </Button>
+                  <Button
+                    variant={chartViewType === "growth" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setChartViewType("growth")}
+                  >
+                    Growth Trend
+                  </Button>
+                  <Button
+                    variant={chartViewType === "map" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setChartViewType("map")}
+                  >
+                    <MapPin className="w-4 h-4 mr-2" />
+                    Map View
+                  </Button>
+                </div>
+                </div>
+
+
+            <Card className="w-full">
+              <CardHeader></CardHeader>
+              <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                {chartViewType === "map" && (
+                  <div className="flex gap-4">
+                    <div className="flex-1 space-y-4">
+                      <StateMap projects={processedData} onStateClick={handleStateClick} />
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <Card className="w-full">
+                          
+                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                            <div className="space-y-3">
+                              {mapStateData.slice(0, 6).map((stateData, index) => (
+                                <div
+                                  key={index}
+                                  className="flex justify-between items-center p-3 bg-muted rounded-lg cursor-pointer hover:bg-muted/80"
+                                  onClick={() => handleStateClick(stateData.state)}
+                                >
+                                  <div>
+                                    <div className="font-medium">
+                                      {stateCoordinates[stateData.state]?.name || stateData.state} ({stateData.state})
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {stateData.count} project{stateData.count !== 1 ? "s" : ""}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="w-full">
+                          <CardHeader>
+                            <CardTitle className="text-sm md:text-base font-medium">Practice Areas</CardTitle>
+                          </CardHeader>
+                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                            <div className="space-y-3">
+                              {practiceAreaData.slice(0, 5).map((areaData, index) => (
+                                <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                                  <div>
+                                    <div className="font-medium">{areaData.area}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {areaData.count} project{areaData.count !== 1 ? "s" : ""}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="font-bold">${(areaData.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      ${(areaData.totalValue / areaData.count / 1000).toFixed(0)}K avg
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className="w-full">
+                          <CardHeader>
+                            <CardTitle className="text-sm md:text-base font-medium">Project Status</CardTitle>
+                          </CardHeader>
+                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                            <div className="space-y-3">
+                              {statusData.map((statusItem, index) => (
+                                <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                                  <div>
+                                    <div className="font-medium">{statusItem.status}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {statusItem.count} project{statusItem.count !== 1 ? "s" : ""}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="font-bold">${(statusItem.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      ${(statusItem.totalValue / statusItem.count / 1000).toFixed(0)}K avg
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {studioData.length > 1 && (
+                        <Card className="w-full">
+                          <CardHeader>
+                            <CardTitle className="text-sm md:text-base font-medium">Studio Performance</CardTitle>
+                          </CardHeader>
+                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {studioData.map((studioItem, index) => (
+                                <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                                  <div>
+                                    <div className="font-medium">{studioItem.studio}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {studioItem.count} project{studioItem.count !== 1 ? "s" : ""}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="font-bold">${(studioItem.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      ${(studioItem.totalValue / studioItem.count / 1000).toFixed(0)}K avg
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                    <div className="w-[200px] space-y-2">
+                      <MultiSelectDropdown
+                        options={states}
+                        selected={filterState}
+                        onChange={setFilterState}
+                        title="States"
+                      />
+                      <MultiSelectDropdown
+                        options={practiceAreas}
+                        selected={filterPracticeArea}
+                        onChange={setFilterPracticeArea}
+                        title="Areas"
+                      />
+                      <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                    </div>
+                  </div>
+                )}
+
+                {chartViewType === "growth" && growthTrendData.length > 0 && (
+                  <div className="mb-4 p-4 bg-muted rounded-lg">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="font-semibold">2023 Starting Value</div>
+                        <div className="text-2xl font-bold text-primary">
+                          ${(growthTrendData[0]?.cumulativeValue / 1000).toFixed(0)}K
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Current Value (2026)</div>
+                        <div className="text-2xl font-bold text-green-600">
+                          $
+                          {(
+                            growthTrendData.find((d) => d.year === "2026" && !d.isProjected)?.cumulativeValue / 1000000 ||
+                            growthTrendData[growthTrendData.findIndex((d) => d.isProjected) - 1]?.cumulativeValue /
+                              1000000 ||
+                            0
+                          ).toFixed(1)}
+                          M
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold flex items-center gap-2">Growth Rate (CAGR)
+                          <input
+                            type="number"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={cagr}
+                            onChange={e => setCagr(Number(e.target.value))}
+                            className="ml-2 w-24 px-3 py-1 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="0.20"
+                          />
+                        </div>
+                        <div className="text-2xl font-bold text-blue-600">{(cagr * 100).toFixed(1)}%</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">2030 Projection</div>
+                        <div className="text-2xl font-bold text-purple-600">
+                          ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toFixed(1)}M
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+
+
+                {chartViewType === "projects" && (
+                  <>
+                    <div className="flex gap-2 mb-4">
+                      <Button
+                        variant={sortBy === "fee" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          if (sortBy === "fee") {
+                            setSortReverse(!sortReverse)
+                          } else {
+                            setSortBy("fee")
+                            setSortReverse(false)
+                          }
+                        }}
+                      >
+                        Sort by Fee {sortBy === "fee" && (sortReverse ? "↑" : "↓")}
+                      </Button>
+                      <Button
+                        variant={sortBy === "date" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          if (sortBy === "date") {
+                            setSortReverse(!sortReverse)
+                          } else {
+                            setSortBy("date")
+                            setSortReverse(false)
+                          }
+                        }}
+                      >
+                        Sort by Date {sortBy === "date" && (sortReverse ? "↑" : "↓")}
+                      </Button>
+                      <Button
+                        variant={sortBy === "name" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          if (sortBy === "name") {
+                            setSortReverse(!sortReverse)
+                          } else {
+                            setSortBy("name")
+                            setSortReverse(false)
+                          }
+                        }}
+                      >
+                        Sort by Name {sortBy === "name" && (sortReverse ? "↑" : "↓")}
+                      </Button>
+                    </div>
+                    <div className="flex gap-4">
+                      <ChartContainer
+                        config={{
+                          fee: {
+                            label: "Project Fee",
+                            color: "hsl(var(--chart-1))",
+                          },
+                        }}
+                        className="h-[600px]"
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={processedData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="shortName" angle={-45} textAnchor="end" height={120} fontSize={12} />
+                            <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
+                            <ChartTooltip
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload
+                                  return (
+                                    <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                      <p className="font-semibold">{data.name}</p>
+                                      <p className="text-sm text-muted-foreground">State: {data.state}</p>
+                                      <p className="text-sm text-muted-foreground">Start: {data.startDate}</p>
+                                      <p className="text-sm text-muted-foreground">End: {data.endDate}</p>
+                                      <p className="text-sm text-muted-foreground">Status: {data.projectStatus}</p>
+                                      <p className="text-lg font-bold text-primary">${data.totalFee.toLocaleString()}</p>
+                                    </div>
+                                  )
+                                }
+                                return null
+                              }}
                             />
-                            <MultiSelectDropdown
-                              options={practiceAreas}
-                              selected={filterPracticeArea}
-                              onChange={setFilterPracticeArea}
-                              title="Areas"
-                            />
-                            <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
-                          </div>
-                        </div>
-                      </>
-                    )}
+                            <Bar dataKey="totalFee" radius={[4, 4, 0, 0]}>
+                              {processedData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.statusColor} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartContainer>
+                      <div className="w-[200px] space-y-2">
+                        <MultiSelectDropdown
+                          options={states}
+                          selected={filterState}
+                          onChange={setFilterState}
+                          title="States"
+                        />
+                        <MultiSelectDropdown
+                          options={practiceAreas}
+                          selected={filterPracticeArea}
+                          onChange={setFilterPracticeArea}
+                          title="Areas"
+                        />
+                        <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                      </div>
+                    </div>
+                  </>
+                )}
 
-                    {chartViewType === "monthly" && (
-                      <div className="flex gap-4">
-                        <div>
-                        <div className="flex justify-end mb-2">
-                          <Button variant="outline" size="sm" onClick={() => setShowMonthlyExpenses(!showMonthlyExpenses)}>
-                            {showMonthlyExpenses ? "Hide" : "Show"} Expenses
-                          </Button>
-                        </div>
-                        <ChartContainer
-                          config={{
-                            revenue: {
-                              label: "Monthly Revenue",
-                              color: "hsl(var(--chart-3))",
-                            },
-                            expense: {
-                              label: "Monthly Expense",
-                              color: "hsl(var(--chart-5))",
-                            },
-                          }}
-                          className="h-[500px]"
-                        >
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={combinedMonthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="month" fontSize={12} angle={-45} textAnchor="end" height={80} />
-                              <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
-                              <ChartTooltip
-                                content={({ active, payload, label }) => {
-                                  if (active && payload && payload.length) {
-                                    const data = payload[0].payload
-                                    return (
-                                      <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
-                                        <p className="font-semibold">{data.month}</p>
-                                        <p className="text-lg font-bold text-primary">
-                                          Revenue: ${data.revenue.toLocaleString()}
+                {chartViewType === "monthly" && (
+                  <div className="flex gap-4">
+                    <div>
+                      <div className="flex justify-end mb-2">
+                        <Button variant="outline" size="sm" onClick={() => setShowMonthlyExpenses(!showMonthlyExpenses)}>
+                          {showMonthlyExpenses ? "Hide" : "Show"} Expenses
+                        </Button>
+                      </div>
+                      <ChartContainer
+                        config={{
+                          revenue: {
+                            label: "Monthly Revenue",
+                            color: "hsl(var(--chart-3))",
+                          },
+                          expense: {
+                            label: "Monthly Expense",
+                            color: "hsl(var(--chart-5))",
+                          },
+                        }}
+                        className="h-[500px]"
+                      >
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={combinedMonthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="month" fontSize={12} angle={-45} textAnchor="end" height={80} />
+                            <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
+                            <ChartTooltip
+                              content={({ active, payload, label }) => {
+                                if (active && payload && payload.length) {
+                                  const data = payload[0].payload
+                                  return (
+                                    <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
+                                      <p className="font-semibold">{data.month}</p>
+                                      <p className="text-lg font-bold text-primary">
+                                        Revenue: ${data.revenue.toLocaleString()}
+                                      </p>
+                                      {showMonthlyExpenses && (
+                                        <p className="text-lg font-bold text-red-500">
+                                          Expense: ${data.expense.toLocaleString()}
                                         </p>
-                                        {showMonthlyExpenses && (
-                                          <p className="text-lg font-bold text-red-500">
-                                            Expense: ${data.expense.toLocaleString()}
-                                          </p>
+                                      )}
+                                      <p className="text-sm text-muted-foreground mt-2">
+                                        Active Projects ({data.projects.length}):
+                                      </p>
+                                      <ul className="text-xs text-muted-foreground mt-1 space-y-1">
+                                        {data.projects.slice(0, 3).map((project: string, idx: number) => (
+                                          <li key={idx} className="truncate">
+                                            • {project.length > 25 ? project.substring(0, 25) + "..." : project}
+                                          </li>
+                                        ))}
+                                        {data.projects.length > 3 && (
+                                          <li className="text-xs">... and {data.projects.length - 3} more</li>
                                         )}
+                                      </ul>
+                                    </div>
+                                  )
+                                }
+                                return null
+                              }}
+                            />
+                            <Legend />
+                            <Line
+                              type="monotone"
+                              dataKey="revenue"
+                              stroke="var(--color-revenue)"
+                              strokeWidth={3}
+                              dot={{ r: 2, fill: 'var(--color-revenue)', stroke: 'var(--color-revenue)' }}
+                            />
+                            {showMonthlyExpenses && (
+                              <Line
+                                type="monotone"
+                                dataKey="expense"
+                                stroke="var(--color-expense)"
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                dot={{ r: 2, fill: 'var(--color-expense)', stroke: 'var(--color-expense)' }}
+                              />
+                            )}
+                            <Brush dataKey="month" height={30} stroke="hsl(var(--chart-3))" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </ChartContainer>
+                    </div>
+                    <div className="w-[200px] space-y-2 self-center">
+                      <MultiSelectDropdown
+                        options={states}
+                        selected={filterState}
+                        onChange={setFilterState}
+                        title="States"
+                      />
+                      <MultiSelectDropdown
+                        options={practiceAreas}
+                        selected={filterPracticeArea}
+                        onChange={setFilterPracticeArea}
+                        title="Areas"
+                      />
+                      <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                    </div>
+                  </div>
+                )}
+
+                {chartViewType === "quarterly" && (
+                  <div className="flex gap-4">
+                    <ChartContainer
+                      config={{
+                        active: {
+                          label: "Active",
+                          color: "#3b82f6",
+                        },
+                        awaiting: {
+                          label: "Awaiting",
+                          color: "#f59e42",
+                        },
+                        completed: {
+                          label: "Completed",
+                          color: "#22c55e",
+                        },
+                        unspecified: {
+                          label: "Unspecified",
+                          color: "#6b7280",
+                        },
+                      }}
+                      className="h-[400px]"
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={quarterlyStatusData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="quarter" fontSize={12} />
+                          <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                          <ChartTooltip
+                            content={({ active, payload, label }) => {
+                              if (active && payload && payload.length) {
+                                const data = payload[0].payload
+                                return (
+                                  <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
+                                    <p className="font-semibold">{data.quarter}</p>
+                                    <p className="text-sm text-blue-500">Active: ${data.active.toLocaleString()}</p>
+                                    <p className="text-sm text-orange-500">Awaiting: ${data.awaiting.toLocaleString()}</p>
+                                    <p className="text-sm text-green-600">Completed: ${data.completed?.toLocaleString?.() ?? data.unspecified?.toLocaleString?.() ?? 0}</p>
+                                    <p className="text-sm text-gray-700">Unspecified: ${data.unspecified?.toLocaleString?.() ?? 0}</p>
+                                  </div>
+                                )
+                              }
+                              return null
+                            }}
+                          />
+                          <Legend />
+                          <Bar dataKey="active" stackId="a" fill="#3b82f6" name="Active" />
+                          <Bar dataKey="awaiting" stackId="a" fill="#f59e42" name="Awaiting" />
+                          <Bar dataKey="completed" stackId="a" fill="#22c55e" name="Completed" />
+                          <Bar dataKey="unspecified" stackId="a" fill="#6b7280" name="Unspecified" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                    <div className="w-[200px] space-y-2 self-center">
+                      <MultiSelectDropdown
+                        options={states}
+                        selected={filterState}
+                        onChange={setFilterState}
+                        title="States"
+                      />
+                      <MultiSelectDropdown
+                        options={practiceAreas}
+                        selected={filterPracticeArea}
+                        onChange={setFilterPracticeArea}
+                        title="Areas"
+                      />
+                      <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
+                    </div>
+                  </div>
+                )}
+
+                {chartViewType === "growth" && (
+                  <div className="flex gap-4">
+                    <ChartContainer
+                      config={{
+                        cumulativeValue: {
+                          label: "Cumulative Value",
+                          color: "hsl(var(--chart-4))",
+                        },
+                        projected: {
+                          label: "Projected Value",
+                          color: "hsl(var(--chart-5))",
+                        },
+                      }}
+                      className="h-[500px]"
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={growthTrendData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="year" fontSize={12} />
+                          <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                          <ChartTooltip
+                            content={({ active, payload, label }) => {
+                              if (active && payload && payload.length) {
+                                const data = payload[0].payload
+                                const isProjected = data.isProjected
+                                return (
+                                  <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
+                                    <p className="font-semibold">
+                                      {data.year} {isProjected && "(Projected)"}
+                                    </p>
+                                    <p className="text-lg font-bold text-primary">
+                                      ${data.cumulativeValue.toLocaleString()}
+                                    </p>
+                                    {!isProjected && data.yearlyValue > 0 && (
+                                      <p className="text-sm text-muted-foreground">
+                                        New contracts: ${data.yearlyValue.toLocaleString()}
+                                      </p>
+                                    )}
+                                    {isProjected && data.growthRate && (
+                                      <p className="text-sm text-muted-foreground">
+                                        Growth rate: {(data.growthRate * 100).toFixed(1)}% CAGR
+                                      </p>
+                                    )}
+                                    {!isProjected && data.projects && data.projects.length > 0 && (
+                                      <>
                                         <p className="text-sm text-muted-foreground mt-2">
-                                          Active Projects ({data.projects.length}):
+                                          Projects ({data.projects.length}):
                                         </p>
                                         <ul className="text-xs text-muted-foreground mt-1 space-y-1">
                                           {data.projects.slice(0, 3).map((project: string, idx: number) => (
@@ -2404,1038 +2983,1239 @@ export default function BusinessPlanDashboard() {
                                             <li className="text-xs">... and {data.projects.length - 3} more</li>
                                           )}
                                         </ul>
-                                      </div>
-                                    )
-                                  }
-                                  return null
-                                }}
-                              />
-                              <Legend />
-                              <Line
-                                type="monotone"
-                                dataKey="revenue"
-                                stroke="var(--color-revenue)"
-                                strokeWidth={3}
-                                dot={{ r: 2, fill: 'var(--color-revenue)', stroke: 'var(--color-revenue)' }}
-                              />
-                              {showMonthlyExpenses && (
-                                <Line
-                                  type="monotone"
-                                  dataKey="expense"
-                                  stroke="var(--color-expense)"
-                                  strokeWidth={2}
-                                  strokeDasharray="5 5"
-                                  dot={{ r: 2, fill: 'var(--color-expense)', stroke: 'var(--color-expense)' }}
-                                />
-                              )}
-                              <Brush dataKey="month" height={30} stroke="hsl(var(--chart-3))" />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </ChartContainer>
-                        </div>
-                        <div className="w-[200px] space-y-2 self-center">
-                          <MultiSelectDropdown
-                            options={states}
-                            selected={filterState}
-                            onChange={setFilterState}
-                            title="States"
-                          />
-                          <MultiSelectDropdown
-                            options={practiceAreas}
-                            selected={filterPracticeArea}
-                            onChange={setFilterPracticeArea}
-                            title="Areas"
-                          />
-                          <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
-                        </div>
-                      </div>
-                    )}
-
-                    {chartViewType === "quarterly" && (
-                      <div className="flex gap-4">
-                      <ChartContainer
-                        config={{
-                          value: {
-                            label: "Contract Value",
-                            color: "hsl(var(--chart-2))",
-                          },
-                        }}
-                        className="h-[400px]"
-                      >
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={quarterlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="quarter" fontSize={12} />
-                            <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                            <ChartTooltip
-                              content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                  const data = payload[0].payload
-                                  return (
-                                    <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
-                                      <p className="font-semibold">{data.quarter}</p>
-                                      <p className="text-lg font-bold text-primary">${data.value.toLocaleString()}</p>
-                                      <p className="text-sm text-muted-foreground mt-2">Projects ({data.projects.length}):</p>
-                                      <ul className="text-xs text-muted-foreground mt-1 space-y-1">
-                                        {data.projects.map((project: string, idx: number) => (
-                                          <li key={idx} className="truncate">
-                                            • {project.length > 30 ? project.substring(0, 30) + "..." : project}
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )
-                                }
-                                return null
-                              }}
-                            />
-                            <Bar dataKey="value" fill="var(--color-value)" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </ChartContainer>
-                        <div className="w-[200px] space-y-2 self-center">
-                          <MultiSelectDropdown
-                            options={states}
-                            selected={filterState}
-                            onChange={setFilterState}
-                            title="States"
-                          />
-                          <MultiSelectDropdown
-                            options={practiceAreas}
-                            selected={filterPracticeArea}
-                            onChange={setFilterPracticeArea}
-                            title="Areas"
-                          />
-                          <MultiSelectDropdown options={statuses} selected={filterStatus} onChange={setFilterStatus} title="Statuses" />
-                        </div>
-                      </div>
-                    )}
-
-                    {chartViewType === "growth" && (
-                      <div className="flex gap-4">
-                      <ChartContainer
-                        config={{
-                          cumulativeValue: {
-                            label: "Cumulative Value",
-                            color: "hsl(var(--chart-4))",
-                          },
-                          projected: {
-                            label: "Projected Value",
-                            color: "hsl(var(--chart-5))",
-                          },
-                        }}
-                        className="h-[500px]"
-                      >
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={growthTrendData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="year" fontSize={12} />
-                            <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                            <ChartTooltip
-                              content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                  const data = payload[0].payload
-                                  const isProjected = data.isProjected
-                                  return (
-                                    <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
-                                      <p className="font-semibold">
-                                        {data.year} {isProjected && "(Projected)"}
-                                      </p>
-                                      <p className="text-lg font-bold text-primary">
-                                        ${data.cumulativeValue.toLocaleString()}
-                                      </p>
-                                      {!isProjected && data.yearlyValue > 0 && (
-                                        <p className="text-sm text-muted-foreground">
-                                          New contracts: ${data.yearlyValue.toLocaleString()}
-                                        </p>
-                                      )}
-                                      {isProjected && data.growthRate && (
-                                        <p className="text-sm text-muted-foreground">
-                                          Growth rate: {(data.growthRate * 100).toFixed(1)}% CAGR
-                                        </p>
-                                      )}
-                                      {!isProjected && data.projects && data.projects.length > 0 && (
-                                        <>
-                                          <p className="text-sm text-muted-foreground mt-2">
-                                            Projects ({data.projects.length}):
-                                          </p>
-                                          <ul className="text-xs text-muted-foreground mt-1 space-y-1">
-                                            {data.projects.slice(0, 3).map((project: string, idx: number) => (
-                                              <li key={idx} className="truncate">
-                                                • {project.length > 25 ? project.substring(0, 25) + "..." : project}
-                                              </li>
-                                            ))}
-                                            {data.projects.length > 3 && (
-                                              <li className="text-xs">... and {data.projects.length - 3} more</li>
-                                            )}
-                                          </ul>
-                                        </>
-                                      )}
-                                    </div>
-                                  )
-                                }
-                                return null
-                              }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="cumulativeValue"
-                              stroke="var(--color-cumulativeValue)"
-                              strokeWidth={3}
-                              dot={(props) => {
-                                const { payload } = props
-                                return (
-                                  <circle
-                                      key={payload.year}
-                                    cx={props.cx}
-                                    cy={props.cy}
-                                    r={payload?.isProjected ? 3 : 5}
-                                    fill={payload?.isProjected ? "hsl(var(--chart-5))" : "var(--color-cumulativeValue)"}
-                                    strokeWidth={payload?.isProjected ? 2 : 0}
-                                    stroke={payload?.isProjected ? "var(--color-cumulativeValue)" : "none"}
-                                    strokeDasharray={payload?.isProjected ? "4,4" : "none"}
-                                  />
-                                )
-                              }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </ChartContainer>
-                        <div className="w-[200px] space-y-2 self-center">
-                          <MultiSelectDropdown
-                            options={states}
-                            selected={filterState}
-                            onChange={setFilterState}
-                            title="States"
-                          />
-                          <MultiSelectDropdown
-                            options={practiceAreas}
-                            selected={filterPracticeArea}
-                            onChange={setFilterPracticeArea}
-                            title="Areas"
-                          />
-                          <MultiSelectDropdown
-                            options={statuses}
-                            selected={filterStatus}
-                            onChange={setFilterStatus}
-                            title="Statuses"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {(chartViewType === "projects") && (
-                      <div className="mt-4 flex items-center justify-center gap-6 text-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-orange-500 rounded"></div>
-                          <span>Not Started</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                          <span>In Progress</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-green-500 rounded"></div>
-                          <span>Completed</span>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="expenses" className="flex-1 overflow-auto space-y-4">
-                {/* FTE Mode Toggle and Inputs (moved from Revenue) */}
-                <div className="mb-4 flex flex-col md:flex-row md:items-center md:gap-6 gap-2 p-4 bg-muted rounded-lg border">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">FTE Mode:</span>
-                    <Button
-                      variant={fteMode === 'manual' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setFteMode('manual')}
-                    >
-                      Manual
-                    </Button>
-                    <Button
-                      variant={fteMode === 'growth' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setFteMode('growth')}
-                    >
-                      Growth Rate
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-4 flex-wrap mt-2 md:mt-0">
-                    <span className="text-xs font-medium">Year:</span>
-                    {projectionYears.map((year) => (
-                      <Button
-                        key={year}
-                        variant={selectedYear === year ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setSelectedYear(year)}
-                      >
-                        {year}
-                      </Button>
-                    ))}
-                    {fteMode === 'manual' ? (
-                      <React.Fragment>
-                        <span className="text-xs font-medium">FTEs per year:</span>
-                        {projectionYears.map((year) => (
-                          <div key={year} className="flex flex-col items-center">
-                            <span className="text-xs text-muted-foreground">{year}</span>
-                            <input
-                              type="number"
-                              min="1"
-                              max="100"
-                              value={manualFTEs[year] || 1}
-                              onChange={e => setManualFTEs({ ...manualFTEs, [year]: Number(e.target.value) })}
-                              className="w-16 px-2 py-1 border rounded text-sm text-center"
-                            />
-                          </div>
-                        ))}
-                      </React.Fragment>
-                    ) : (
-                      <React.Fragment>
-                        <span className="text-xs font-medium">Base FTE:</span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={fteBase}
-                          onChange={e => setFteBase(Number(e.target.value))}
-                          className="w-16 px-2 py-1 border rounded text-sm text-center"
-                        />
-                        <span className="text-xs font-medium">Growth Rate (%/yr):</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          value={(fteGrowth * 100).toFixed(2)}
-                          onChange={e => setFteGrowth(Number(e.target.value) / 100)}
-                          className="w-20 px-2 py-1 border rounded text-sm text-center"
-                        />
-                      </React.Fragment>
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <Card className="lg:col-span-2">
-                    <CardHeader>
-                      <CardTitle>Expense Breakdown - {selectedYear}</CardTitle>
-                      <CardDescription>{customFTE} FTE Configuration</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ChartContainer
-                        config={{
-                          amount: {
-                            label: "Amount",
-                            color: "hsl(var(--chart-1))",
-                          },
-                        }}
-                        className="h-[400px]"
-                      >
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={expenseBreakdown}
-                            layout="vertical"
-                            margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis type="number" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
-                            <YAxis type="category" dataKey="category" fontSize={10} width={90} />
-                            <ChartTooltip
-                              content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                  const data = payload[0].payload
-                                  return (
-                                    <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                      <p className="font-semibold">{data.category}</p>
-                                      <p className="text-lg font-bold text-primary">${data.amount.toLocaleString()}</p>
-                                    </div>
-                                  )
-                                }
-                                return null
-                              }}
-                            />
-                            <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
-                              {expenseBreakdown.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </ChartContainer>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Expense Parameters</CardTitle>
-                      <CardDescription>Adjust values to see impact on projections</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6 max-h-[400px] overflow-y-auto">
-                      {/* Personnel Costs */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Personnel Costs</h4>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Average Salary</label>
-                          <input
-                            type="number"
-                            value={expenseParams.avgSalary}
-                            onChange={(e) => updateExpenseParam("avgSalary", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Healthcare per Employee</label>
-                          <input
-                            type="number"
-                            value={expenseParams.healthcarePerEmployee}
-                            onChange={(e) => updateExpenseParam("healthcarePerEmployee", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Payroll Tax Rate</label>
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={expenseParams.payrollTaxRate}
-                            onChange={(e) => updateExpenseParam("payrollTaxRate", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">401k Match Rate</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={expenseParams.retirement401kRate}
-                            onChange={(e) => updateExpenseParam("retirement401kRate", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Office & Facilities */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Office & Facilities</h4>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Office Rent (Monthly)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.officeRentPerMonth}
-                            onChange={(e) => updateExpenseParam("officeRentPerMonth", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Utilities (Monthly)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.utilitiesPerMonth}
-                            onChange={(e) => updateExpenseParam("utilitiesPerMonth", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Internet/Phone (Monthly)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.internetPhonePerMonth}
-                            onChange={(e) => updateExpenseParam("internetPhonePerMonth", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Technology */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Technology</h4>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Laptop per Employee</label>
-                          <input
-                            type="number"
-                            value={expenseParams.laptopPerEmployee}
-                            onChange={(e) => updateExpenseParam("laptopPerEmployee", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Software per Employee</label>
-                          <input
-                            type="number"
-                            value={expenseParams.softwareLicensesPerEmployee}
-                            onChange={(e) => updateExpenseParam("softwareLicensesPerEmployee", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">IT Support per Employee</label>
-                          <input
-                            type="number"
-                            value={expenseParams.itSupportPerEmployee}
-                            onChange={(e) => updateExpenseParam("itSupportPerEmployee", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Professional Services */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Professional Services</h4>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Accounting (Annual)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.accountingAnnual}
-                            onChange={(e) => updateExpenseParam("accountingAnnual", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Legal (Annual)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.legalAnnual}
-                            onChange={(e) => updateExpenseParam("legalAnnual", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Insurance (Annual)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.insuranceAnnual}
-                            onChange={(e) => updateExpenseParam("insuranceAnnual", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Business Development */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Business Development</h4>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Marketing (Annual)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.marketingAnnual}
-                            onChange={(e) => updateExpenseParam("marketingAnnual", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Travel per Employee</label>
-                          <input
-                            type="number"
-                            value={expenseParams.travelPerEmployee}
-                            onChange={(e) => updateExpenseParam("travelPerEmployee", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Training per Employee</label>
-                          <input
-                            type="number"
-                            value={expenseParams.conferencesTrainingPerEmployee}
-                            onChange={(e) => updateExpenseParam("conferencesTrainingPerEmployee", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Financing */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Financing</h4>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Loan Amount</label>
-                          <input
-                            type="number"
-                            value={expenseParams.loanAmount}
-                            onChange={(e) => updateExpenseParam("loanAmount", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Interest Rate</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={expenseParams.loanInterestRate}
-                            onChange={(e) => updateExpenseParam("loanInterestRate", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Term (Years)</label>
-                          <input
-                            type="number"
-                            value={expenseParams.loanTermYears}
-                            onChange={(e) => updateExpenseParam("loanTermYears", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Other */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm border-b pb-1">Other</h4>
-                        <div className="space-y-2">
-                          <label className="text-xs font-medium">Inflation Rate</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={expenseParams.inflationRate}
-                            onChange={(e) => updateExpenseParam("inflationRate", Number(e.target.value))}
-                            className="w-full px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-
-                      <Button variant="outline" onClick={() => setExpenseParams(defaultExpenseParams)} className="w-full">
-                        Reset to Defaults
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="revenue" className="flex-1 overflow-auto space-y-4">
-                {/* FTE Mode Toggle and Inputs */}
-                <div className="mb-4 flex flex-col md:flex-row md:items-center md:gap-6 gap-2 p-4 bg-muted rounded-lg border">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">FTE Mode:</span>
-                    <Button
-                      variant={fteMode === 'manual' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setFteMode('manual')}
-                    >
-                      Manual
-                    </Button>
-                    <Button
-                      variant={fteMode === 'growth' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setFteMode('growth')}
-                    >
-                      Growth Rate
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-4 flex-wrap mt-2 md:mt-0">
-                    {fteMode === 'manual' ? (
-                      <React.Fragment>
-                        <span className="text-xs font-medium">FTEs per year:</span>
-                        {projectionYears.map((year) => (
-                          <div key={year} className="flex flex-col items-center">
-                            <span className="text-xs text-muted-foreground">{year}</span>
-                            <input
-                              type="number"
-                              min="1"
-                              max="100"
-                              value={manualFTEs[year] || 1}
-                              onChange={e => setManualFTEs({ ...manualFTEs, [year]: Number(e.target.value) })}
-                              className="w-16 px-2 py-1 border rounded text-sm text-center"
-                            />
-                          </div>
-                        ))}
-                      </React.Fragment>
-                    ) : (
-                      <React.Fragment>
-                        <span className="text-xs font-medium">Base FTE:</span>
-                        <input
-                          type="number"
-                          min="1"
-                          max="100"
-                          value={fteBase}
-                          onChange={e => setFteBase(Number(e.target.value))}
-                          className="w-16 px-2 py-1 border rounded text-sm text-center"
-                        />
-                        <span className="text-xs font-medium">Growth Rate (%/yr):</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          value={(fteGrowth * 100).toFixed(2)}
-                          onChange={e => setFteGrowth(Number(e.target.value) / 100)}
-                          className="w-20 px-2 py-1 border rounded text-sm text-center"
-                        />
-                      </React.Fragment>
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Revenue Projections</CardTitle>
-                      <CardDescription>Contract revenue growth from 2025-2030</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ChartContainer
-                        config={{
-                          contractRevenue: {
-                            label: "Contract Revenue",
-                            color: "hsl(var(--chart-1))",
-                          },
-                          billableRevenue: {
-                            label: "Billable Revenue",
-                            color: "hsl(var(--chart-2))",
-                          },
-                        }}
-                        className="h-[300px]"
-                      >
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="year" fontSize={12} />
-                            <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                            <ChartTooltip
-                              content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                  const data = payload[0].payload
-                                  return (
-                                    <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                      <p className="font-semibold">{data.year}</p>
-                                      <p className="text-sm text-blue-500">
-                                        Contract Revenue: ${data.contractRevenue.toLocaleString()}
-                                      </p>
-                                      <p className="text-sm text-green-500">
-                                        Billable Revenue: ${data.billableRevenue.toLocaleString()}
-                                      </p>
-                                      <p className="text-xs text-muted-foreground">FTE: {data.fte}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        Profit Margin: {data.profitMargin.toFixed(1)}%
-                                      </p>
-                                    </div>
-                                  )
-                                }
-                                return null
-                              }}
-                            />
-                            <Legend />
-                            <Bar dataKey="contractRevenue" fill="var(--color-contractRevenue)" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="billableRevenue" fill="var(--color-billableRevenue)" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </ChartContainer>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Profit Margins</CardTitle>
-                      <CardDescription>Net income and profit margin trends</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ChartContainer
-                        config={{
-                          netIncome: {
-                            label: "Net Income",
-                            color: "hsl(var(--chart-3))",
-                          },
-                          profitMargin: {
-                            label: "Profit Margin %",
-                            color: "hsl(var(--chart-4))",
-                          },
-                        }}
-                        className="h-[300px]"
-                      >
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="year" fontSize={12} />
-                            <YAxis
-                              yAxisId="left"
-                              tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
-                              fontSize={12}
-                            />
-                            <YAxis
-                              yAxisId="right"
-                              orientation="right"
-                              tickFormatter={(value) => `${value.toFixed(0)}%`}
-                              fontSize={12}
-                            />
-                            <ChartTooltip
-                              content={({ active, payload, label }) => {
-                                if (active && payload && payload.length) {
-                                  const data = payload[0].payload
-                                  return (
-                                    <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                      <p className="font-semibold">{data.year}</p>
-                                      <p className="text-sm text-green-500">Net Income: ${data.netIncome.toLocaleString()}</p>
-                                      <p className="text-sm text-blue-500">Profit Margin: {data.profitMargin.toFixed(1)}%</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        Revenue: ${data.contractRevenue.toLocaleString()}
-                                      </p>
-                                      <p className="text-xs text-muted-foreground">
-                                        Expenses: ${data.totalExpenses.toLocaleString()}
-                                      </p>
-                                    </div>
-                                  )
-                                }
-                                return null
-                              }}
-                            />
-                            <Legend />
-                            <Bar yAxisId="left" dataKey="netIncome" fill="var(--color-netIncome)" radius={[4, 4, 0, 0]} />
-                            <Line
-                              yAxisId="right"
-                              type="monotone"
-                              dataKey="profitMargin"
-                              stroke="var(--color-profitMargin)"
-                              strokeWidth={3}
-                              dot={{ r: 4 }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </ChartContainer>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Revenue Breakdown by Year</CardTitle>
-                    <CardDescription>Detailed financial projections with key metrics</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left p-2">Year</th>
-                            <th className="text-left p-2">FTE</th>
-                            <th className="text-left p-2">Contract Revenue</th>
-                            <th className="text-left p-2">Billable Revenue</th>
-                            <th className="text-left p-2">Total Expenses</th>
-                            <th className="text-left p-2">Net Income</th>
-                            <th className="text-left p-2">Profit Margin</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {businessProjections.map((proj) => (
-                            <tr key={proj.year} className="border-b hover:bg-muted/50">
-                              <td className="p-2 font-medium">{proj.year}</td>
-                              <td className="p-2">{proj.fte}</td>
-                              <td className="p-2">${proj.contractRevenue.toLocaleString()}</td>
-                              <td className="p-2">${proj.billableRevenue.toLocaleString()}</td>
-                              <td className="p-2">${proj.totalExpenses.toLocaleString()}</td>
-                              <td className="p-2 font-medium text-green-600">${proj.netIncome.toLocaleString()}</td>
-                              <td className="p-2">{proj.profitMargin.toFixed(1)}%</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="cashflow" className="flex-1 overflow-auto space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Cash Flow Projections</CardTitle>
-                    <CardDescription>
-                      Projected cash flow from {projectionYears[0]} to {projectionYears[projectionYears.length - 1]}
-                    </CardDescription>
-                    <div className="flex items-center gap-2 mt-2">
-                      <label className="text-sm font-medium">Starting Cash:</label>
-                      <input
-                        type="number"
-                        value={startingCash}
-                        onChange={(e) => setStartingCash(Number(e.target.value))}
-                        className="w-32 px-2 py-1 border rounded text-sm"
-                      />
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm">
-                      <div>
-                        <div className="font-semibold">Starting Cash</div>
-                        <div className="text-2xl font-bold text-primary">${(startingCash / 1000).toFixed(0)}K</div>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Total Net Income</div>
-                        <div className="text-2xl font-bold text-green-600">
-                          ${(cashFlowProjections.reduce((sum, p) => sum + p.netIncome, 0) / 1000000).toFixed(1)}M
-                        </div>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Lowest Cash Point</div>
-                        <div className="text-2xl font-bold text-red-600">
-                          ${(Math.min(...cashFlowProjections.map((p) => p.cumulativeCash)) / 1000).toFixed(0)}K
-                        </div>
-                      </div>
-                      <div>
-                        <div className="font-semibold">
-                          Ending Cash ({cashFlowProjections[cashFlowProjections.length - 1].year})
-                        </div>
-                        <div className="text-2xl font-bold text-purple-600">
-                          ${(cashFlowProjections[cashFlowProjections.length - 1].cumulativeCash / 1000000).toFixed(1)}M
-                        </div>
-                      </div>
-                    </div>
-
-                    <ChartContainer
-                      config={{
-                        cumulativeCash: {
-                          label: "Cumulative Cash",
-                          color: "hsl(var(--chart-1))",
-                        },
-                        netIncome: {
-                          label: "Net Income",
-                          color: "hsl(var(--chart-2))",
-                        },
-                      }}
-                      className="h-[400px]"
-                    >
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={cashFlowProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="year" fontSize={12} />
-                          <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                          <ChartTooltip
-                            content={({ active, payload, label }) => {
-                              if (active && payload && payload.length) {
-                                const data = payload[0].payload
-                                return (
-                                  <div className="bg-background border rounded-lg p-3 shadow-lg">
-                                    <p className="font-semibold">{data.year}</p>
-                                    <p className="text-sm text-blue-500">
-                                      Cumulative Cash: ${data.cumulativeCash.toLocaleString()}
-                                    </p>
-                                    <p className="text-sm text-green-500">Net Income: ${data.netIncome.toLocaleString()}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      Revenue: ${data.contractRevenue.toLocaleString()}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      Expenses: ${data.totalExpenses.toLocaleString()}
-                                    </p>
+                                      </>
+                                    )}
                                   </div>
                                 )
                               }
                               return null
                             }}
                           />
-                          <Legend />
                           <Line
                             type="monotone"
-                            dataKey="cumulativeCash"
-                            stroke="var(--color-cumulativeCash)"
+                            dataKey="cumulativeValue"
+                            stroke="var(--color-cumulativeValue)"
                             strokeWidth={3}
-                            dot={{ r: 5 }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="netIncome"
-                            stroke="var(--color-netIncome)"
-                            strokeWidth={2}
-                            strokeDasharray="5 5"
-                            dot={{ r: 3 }}
+                            dot={(props) => {
+                              const { payload } = props
+                              return (
+                                <circle
+                                  key={payload.year}
+                                  cx={props.cx}
+                                  cy={props.cy}
+                                  r={payload?.isProjected ? 3 : 5}
+                                  fill={payload?.isProjected ? "hsl(var(--chart-5))" : "var(--color-cumulativeValue)"}
+                                  strokeWidth={payload?.isProjected ? 2 : 0}
+                                  stroke={payload?.isProjected ? "var(--color-cumulativeValue)" : "none"}
+                                  strokeDasharray={payload?.isProjected ? "4,4" : "none"}
+                                />
+                              )
+                            }}
                           />
                         </LineChart>
                       </ResponsiveContainer>
                     </ChartContainer>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-              <TabsContent value="overview" className="flex-1 overflow-auto space-y-4">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Business Projections Summary</CardTitle>
-                      <CardDescription>Key financial metrics for 2025-2030</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        {businessProjections.map((proj) => (
-                          <div key={proj.year} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                            <div>
-                              <div className="font-medium">{proj.year}</div>
-                              <div className="text-sm text-muted-foreground">{proj.fte} FTE</div>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-bold">${(proj.contractRevenue / 1000000).toFixed(1)}M</div>
-                              <div className="text-sm text-muted-foreground">{proj.profitMargin.toFixed(1)}% margin</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                    <div className="w-[200px] space-y-2 self-center">
+                      <MultiSelectDropdown
+                        options={states}
+                        selected={filterState}
+                        onChange={setFilterState}
+                        title="States"
+                      />
+                      <MultiSelectDropdown
+                        options={practiceAreas}
+                        selected={filterPracticeArea}
+                        onChange={setFilterPracticeArea}
+                        title="Areas"
+                      />
+                      <MultiSelectDropdown
+                        options={statuses}
+                        selected={filterStatus}
+                        onChange={setFilterStatus}
+                        title="Statuses"
+                      />
+                    </div>
+                  </div>
+                )}
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Project Distribution</CardTitle>
-                      <CardDescription>Breakdown by practice area and status</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="font-medium mb-2">By Practice Area</h4>
-                          <div className="space-y-2">
-                            {practiceAreaData.slice(0, 3).map((area, index) => (
-                              <div key={index} className="flex justify-between items-center">
-                                <span className="text-sm">{area.area}</span>
-                                <div className="text-right">
-                                  <span className="font-medium">{area.count} projects</span>
-                                  <div className="text-xs text-muted-foreground">${(area.totalValue / 1000).toFixed(0)}K</div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                {(chartViewType === "projects") && (
+                  <div className="mt-4 flex items-center justify-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-orange-500 rounded"></div>
+                      <span>Not Started</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                      <span>In Progress</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-green-500 rounded"></div>
+                      <span>Completed</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+        )}
+        {allowedTabs.includes('financial') && (
+        <TabsContent value="financial">
+          <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'expenses' | 'revenue' | 'cashflow' | 'overview')} className="h-full flex flex-col">
+              <TabsList className="grid w-full grid-cols-4 bg-blue-50 border border-blue-200 shadow-sm rounded-lg h-14 min-h-[56px] px-2 mb-4">
+                <TabsTrigger
+                  value="expenses"
+                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
+                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                >
+                  Expenses
+                </TabsTrigger>
+                <TabsTrigger
+                  value="revenue"
+                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
+                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                >
+                  Revenue
+                </TabsTrigger>
+                <TabsTrigger
+                  value="cashflow"
+                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
+                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                >
+                  Cash Flow
+                </TabsTrigger>
+                <TabsTrigger
+                  value="overview"
+                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
+                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
+                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                >
 
-                        <div>
-                          <h4 className="font-medium mb-2">By Status</h4>
-                          <div className="space-y-2">
-                            {statusData.map((status, index) => (
-                              <div key={index} className="flex justify-between items-center">
-                                <span className="text-sm">{status.status}</span>
-                                <div className="text-right">
-                                  <span className="font-medium">{status.count} projects</span>
-                                  <div className="text-xs text-muted-foreground">
-                                    ${(status.totalValue / 1000).toFixed(0)}K
-                                  </div>
-                                </div>
+                </TabsTrigger>
+        </TabsList>
+            
+
+        <TabsContent value="expenses" className="flex-1 overflow-auto space-y-4">
+          {/* FTE Mode Toggle and Inputs (moved from Revenue) */}
+          <div className="mb-4 flex flex-col md:flex-row md:items-center md:gap-6 gap-2 p-4 bg-muted rounded-lg border">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm">FTE Mode:</span>
+              <Button
+                variant={fteMode === 'manual' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFteMode('manual')}
+              >
+                Manual
+              </Button>
+              <Button
+                variant={fteMode === 'growth' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFteMode('growth')}
+              >
+                Growth Rate
+              </Button>
+            </div>
+            <div className="flex items-center gap-4 flex-wrap mt-2 md:mt-0">
+              {fteMode === 'manual' ? (
+                <React.Fragment>
+                  <span className="text-xs font-medium">FTEs per year:</span>
+                  {projectionYears.map((year) => (
+                    <div key={year} className="flex flex-col items-center">
+                      <span className="text-xs text-muted-foreground">{year}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={manualFTEs[year] || 1}
+                        onChange={e => setManualFTEs({ ...manualFTEs, [year]: Number(e.target.value) })}
+                        className="w-16 px-2 py-1 border rounded text-sm text-center"
+                      />
+            </div>
+                  ))}
+                </React.Fragment>
+              ) : (
+                <React.Fragment>
+                  <span className="text-xs font-medium">Base FTE:</span>
+              <input
+                type="number"
+                min="1"
+                    max="100"
+                    value={fteBase}
+                    onChange={e => setFteBase(Number(e.target.value))}
+                    className="w-16 px-2 py-1 border rounded text-sm text-center"
+                  />
+                  <span className="text-xs font-medium">Growth Rate (%/yr):</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={(fteGrowth * 100).toFixed(2)}
+                    onChange={e => setFteGrowth(Number(e.target.value) / 100)}
+                    className="w-20 px-2 py-1 border rounded text-sm text-center"
+                  />
+                </React.Fragment>
+              )}
+            </div>
+          </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+
+                <Card className="w-full">
+              <CardHeader>
+                    <CardTitle>Expenses by Year (Breakdown)</CardTitle>
+                    <CardDescription>Annual expenses by category for each year</CardDescription>
+              </CardHeader>
+                  <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                    <div className="mx-auto h-[460px]" style={{ width: 600 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={yearlyExpenseBreakdown} margin={{ top: 20, right: 10, left: 10, bottom: 80 }} barSize={40} barCategoryGap="10%" barGap={0}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="year" 
+                            fontSize={10} 
+                            interval={0}
+                            tick={({ x, y, payload }) => (
+                              <text x={x} y={y + 15} textAnchor="middle" fontSize={12} fill="#222">{payload.value}</text>
+                            )}
+                          />
+                          <YAxis 
+                            tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} 
+                            fontSize={10}
+                            domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.2 / 1000) * 1000]}
+                          />
+                      <ChartTooltip
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <div className="bg-background border rounded-lg p-3 shadow-lg" style={{ zIndex: 9999, position: 'relative' }}>
+                                    <p className="font-semibold">{label}</p>
+                                    {payload.map((item, idx) => (
+                                      <div key={idx} className="flex justify-between">
+                                        <span>{item.name}</span>
+                                        <span className="font-bold">${typeof item.value === 'number' ? item.value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : item.value}</span>
+                                      </div>
+                                    ))}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                            )
+                          }
+                          return null
+                        }}
+                      />
+                          {/* Legend removed to prevent tooltip overlap */}
+                          {/* Add a Bar for each new category, stacked */}
+                          {[
+                            { key: "Personnel Costs", color: "hsl(var(--chart-1))" },
+                            { key: "Office & Facilities", color: "hsl(var(--chart-2))" },
+                            { key: "Technology", color: "hsl(var(--chart-3))" },
+                            { key: "Professional Services", color: "hsl(var(--chart-4))" },
+                            { key: "Business Development", color: "hsl(var(--chart-5))" },
+                            { key: "Financing", color: "hsl(var(--chart-6))" },
+                            { key: "Other", color: "hsl(var(--chart-1))" },
+                          ].map((cat: { key: string, color: string }, index: number) => (
+                            <Bar
+                              key={cat.key}
+                              dataKey={cat.key}
+                              stackId="a"
+                              fill={cat.color}
+                              radius={[4, 4, 0, 0]}
+                              isAnimationActive={false}
+                            />
+                          ))}
+                          {/* Add total labels as a separate transparent bar - NOT stacked */}
+                          <Bar
+                            dataKey="total"
+                            stackId="b"
+                            fill="transparent"
+                            radius={[4, 4, 0, 0]}
+                            isAnimationActive={false}
+                          >
+                            <LabelList
+                              dataKey="total"
+                              position="top"
+                              offset={10}
+                              content={({ x, y, value }) => (
+                                <text x={x} y={y - 8} textAnchor="middle" fontSize={12} fontWeight={700} fill="#222">
+                                  {value ? `$${(value / 1000).toFixed(0)}K` : ''}
+                                </text>
+                              )}
+                            />
+                          </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Expense Parameters</CardTitle>
+                <CardDescription>Adjust values to see impact on projections</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6 max-h-[400px] overflow-y-auto">
+       
+
+                {/* Personnel Costs */}
+                <div className="space-y-3">
+                  {(() => {
+                    const expenses = calculateExpenses(1, selectedYear)
+                    const personnelSubtotal = expenses.salaries + expenses.healthcare + expenses.payrollTaxes + expenses.unemploymentTax + expenses.workersComp + expenses.retirement
+                    return (
+                      <button
+                        type="button"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, personnel: !prev.personnel }))}
+                      >
+                        <span>Personnel Costs</span>
+                        <span className="ml-auto text-xs font-normal text-blue-900">${personnelSubtotal.toLocaleString()} <span className='text-[10px]'>(per 1 FTE)</span></span>
+                        <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.personnel ? 'rotate-180' : ''}`} />
+                      </button>
+                    )
+                  })()}
+                  {!expenseGroupsCollapsed.personnel && (
+                    <div className="space-y-2 pl-3">
+                      <label className="text-xs font-medium">Average Salary</label>
+                      <input
+                        type="number"
+                        value={expenseParams.avgSalary}
+                        onChange={(e) => updateExpenseParam("avgSalary", Number(e.target.value))}
+                        className="w-full px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                  )}
+                  {!expenseGroupsCollapsed.personnel && (
+                    <div className="space-y-2 pl-3">
+                      <label className="text-xs font-medium">Healthcare per Employee</label>
+                      <input
+                        type="number"
+                        value={expenseParams.healthcarePerEmployee}
+                        onChange={(e) => updateExpenseParam("healthcarePerEmployee", Number(e.target.value))}
+                        className="w-full px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                  )}
+                  {!expenseGroupsCollapsed.personnel && (
+                    <div className="space-y-2 pl-3">
+                      <label className="text-xs font-medium">Payroll Tax Rate</label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        value={expenseParams.payrollTaxRate}
+                        onChange={(e) => updateExpenseParam("payrollTaxRate", Number(e.target.value))}
+                        className="w-full px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                  )}
+                  {!expenseGroupsCollapsed.personnel && (
+                    <div className="space-y-2 pl-3">
+                      <label className="text-xs font-medium">401k Match Rate</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={expenseParams.retirement401kRate}
+                        onChange={(e) => updateExpenseParam("retirement401kRate", Number(e.target.value))}
+                        className="w-full px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Geographic Distribution</CardTitle>
-                    <CardDescription>Projects by state with total values</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {mapStateData.map((stateData, index) => (
-                        <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                          <div>
-                            <div className="font-medium">{stateCoordinates[stateData.state]?.name || stateData.state}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {stateData.count} project{stateData.count !== 1 ? "s" : ""}
-                            </div>
+                {/* Office & Facilities */}
+                <div className="space-y-3">
+                  {(() => {
+                    const expenses = calculateExpenses(1, selectedYear)
+                    const officeSubtotal = expenses.officeRent + expenses.utilities + expenses.internetPhone
+                    return (
+                      <button
+                        type="button"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, office: !prev.office }))}
+                      >
+                        <span>Office & Facilities</span>
+                        <span className="ml-auto text-xs font-normal text-blue-900">${officeSubtotal.toLocaleString()}</span>
+                        <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.office ? 'rotate-180' : ''}`} />
+                      </button>
+                    )
+                  })()}
+                  {!expenseGroupsCollapsed.office && (
+                    <>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Office Rent (Monthly)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.officeRentPerMonth}
+                          onChange={(e) => updateExpenseParam("officeRentPerMonth", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Utilities (Monthly)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.utilitiesPerMonth}
+                          onChange={(e) => updateExpenseParam("utilitiesPerMonth", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Internet/Phone (Monthly)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.internetPhonePerMonth}
+                          onChange={(e) => updateExpenseParam("internetPhonePerMonth", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Technology */}
+                <div className="space-y-3">
+                  {(() => {
+                    const expenses = calculateExpenses(1, selectedYear)
+                    const techSubtotal = expenses.equipment + expenses.software + expenses.itSupport
+                    return (
+                      <button
+                        type="button"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, technology: !prev.technology }))}
+                      >
+                        <span>Technology</span>
+                        <span className="ml-auto text-xs font-normal text-blue-900">${techSubtotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.technology ? 'rotate-180' : ''}`} />
+                      </button>
+                    )
+                  })()}
+                  {!expenseGroupsCollapsed.technology && (
+                    <>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Laptop per Employee</label>
+                        <input
+                          type="number"
+                          value={expenseParams.laptopPerEmployee}
+                          onChange={(e) => updateExpenseParam("laptopPerEmployee", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Software per Employee</label>
+                        <input
+                          type="number"
+                          value={expenseParams.softwareLicensesPerEmployee}
+                          onChange={(e) => updateExpenseParam("softwareLicensesPerEmployee", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">IT Support per Employee</label>
+                        <input
+                          type="number"
+                          value={expenseParams.itSupportPerEmployee}
+                          onChange={(e) => updateExpenseParam("itSupportPerEmployee", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Professional Services */}
+                <div className="space-y-3">
+                  {(() => {
+                    const expenses = calculateExpenses(1, selectedYear)
+                    const profSubtotal = expenseParams.freelanceAnnual + expenseParams.accountingAnnual + expenseParams.legalAnnual + expenseParams.insuranceAnnual
+                    return (
+                      <button
+                        type="button"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, professional: !prev.professional }))}
+                      >
+                        <span>Professional Services</span>
+                        <span className="ml-auto text-xs font-normal text-blue-900">${profSubtotal.toLocaleString()}</span>
+                        <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.professional ? 'rotate-180' : ''}`} />
+                      </button>
+                    )
+                  })()}
+                  {!expenseGroupsCollapsed.professional && (
+                    <>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Freelance (Annual)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.freelanceAnnual}
+                          onChange={(e) => updateExpenseParam("freelanceAnnual", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Accounting (Annual)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.accountingAnnual}
+                          onChange={(e) => updateExpenseParam("accountingAnnual", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Legal (Annual)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.legalAnnual}
+                          onChange={(e) => updateExpenseParam("legalAnnual", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Insurance (Annual)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.insuranceAnnual}
+                          onChange={(e) => updateExpenseParam("insuranceAnnual", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Business Development */}
+                <div className="space-y-3">
+                  {(() => {
+                    const expenses = calculateExpenses(1, selectedYear)
+                    const bizSubtotal = expenseParams.marketingAnnual + expenseParams.travelPerEmployee + expenseParams.conferencesTrainingPerEmployee
+                    return (
+                      <button
+                        type="button"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, business: !prev.business }))}
+                      >
+                        <span>Business Development</span>
+                        <span className="ml-auto text-xs font-normal text-blue-900">${bizSubtotal.toLocaleString()}</span>
+                        <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.business ? 'rotate-180' : ''}`} />
+                      </button>
+                    )
+                  })()}
+                  {!expenseGroupsCollapsed.business && (
+                    <>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Marketing (Annual)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.marketingAnnual}
+                          onChange={(e) => updateExpenseParam("marketingAnnual", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Travel per Employee</label>
+                        <input
+                          type="number"
+                          value={expenseParams.travelPerEmployee}
+                          onChange={(e) => updateExpenseParam("travelPerEmployee", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Training per Employee</label>
+                        <input
+                          type="number"
+                          value={expenseParams.conferencesTrainingPerEmployee}
+                          onChange={(e) => updateExpenseParam("conferencesTrainingPerEmployee", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Financing */}
+                <div className="space-y-3">
+                  {(() => {
+                    const expenses = calculateExpenses(1, selectedYear)
+                    const financeSubtotal = expenses.loanPayment
+                    return (
+                      <button
+                        type="button"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, financing: !prev.financing }))}
+                      >
+                        <span>Financing</span>
+                        <span className="ml-auto text-xs font-normal text-blue-900">${financeSubtotal.toLocaleString()}</span>
+                        <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.financing ? 'rotate-180' : ''}`} />
+                      </button>
+                    )
+                  })()}
+                  {!expenseGroupsCollapsed.financing && (
+                    <>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Loan Amount</label>
+                        <input
+                          type="number"
+                          value={expenseParams.loanAmount}
+                          onChange={(e) => updateExpenseParam("loanAmount", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Interest Rate</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={expenseParams.loanInterestRate}
+                          onChange={(e) => updateExpenseParam("loanInterestRate", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2 pl-3">
+                        <label className="text-xs font-medium">Term (Years)</label>
+                        <input
+                          type="number"
+                          value={expenseParams.loanTermYears}
+                          onChange={(e) => updateExpenseParam("loanTermYears", Number(e.target.value))}
+                          className="w-full px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Other */}
+                <div className="space-y-3">
+                  {(() => {
+                    const expenses = calculateExpenses(1, selectedYear)
+                    const otherSubtotal = expenses.officeSupplies + expenses.miscellaneous
+                    return (
+                      <button
+                        type="button"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, other: !prev.other }))}
+                      >
+                        <span>Other</span>
+                        <span className="ml-auto text-xs font-normal text-blue-900">${otherSubtotal.toLocaleString()}</span>
+                        <ChevronDown className={`h-5 w-5 ml-2 transition-transform ${expenseGroupsCollapsed.other ? 'rotate-180' : ''}`} />
+                      </button>
+                    )
+                  })()}
+                  {!expenseGroupsCollapsed.other && (
+                    <div className="space-y-2 pl-3">
+                      <label className="text-xs font-medium">Inflation Rate</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={expenseParams.inflationRate}
+                        onChange={(e) => updateExpenseParam("inflationRate", Number(e.target.value))}
+                        className="w-full px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <Button variant="outline" onClick={() => setExpenseParams(defaultExpenseParams)} className="w-full">
+                  Reset to Defaults
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+              
+        </TabsContent>
+
+        <TabsContent value="revenue" className="flex-1 overflow-auto space-y-4">
+              
+          {/* Manual Revenue Input Section */}
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle>Revenue Input Method</CardTitle>
+              <CardDescription>Choose how to calculate revenue projections</CardDescription>
+            </CardHeader>
+            <CardContent className="px-2 md:px-4 py-2 md:py-4">
+              <div className="space-y-4">
+                {/* Toggle between methods */}
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="revenueMethod"
+                      checked={!useManualRevenue}
+                      onChange={() => setUseManualRevenue(false)}
+                      className="w-4 h-4"
+                    />
+                    <span className="font-medium">Project-based (from CSV/Project data)</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="revenueMethod"
+                      checked={useManualRevenue}
+                      onChange={() => setUseManualRevenue(true)}
+                      className="w-4 h-4"
+                    />
+                    <span className="font-medium">Manual input</span>
+                  </label>
+                </div>
+
+                {/* Manual revenue input fields */}
+                {useManualRevenue && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                      {projectionYears.map((year) => (
+                        <div key={year} className="space-y-2">
+                          <label className="text-sm font-medium">{year}</label>
+                          <input
+                            type="number"
+                            value={manualRevenue[year] || 0}
+                            onChange={(e) => setManualRevenue(prev => ({
+                              ...prev,
+                              [year]: Number(e.target.value) || 0
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="0"
+                          />
+                          <div className="text-xs text-gray-500">
+                            ${((manualRevenue[year] || 0) / 1000000).toFixed(0)}M
                           </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Quarterly breakdown for 2026 */}
+                    <div className="border-t pt-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <input
+                          type="checkbox"
+                          checked={useQuarterlyBreakdown}
+                          onChange={() => setUseQuarterlyBreakdown(!useQuarterlyBreakdown)}
+                          className="w-4 h-4"
+                        />
+                        <span className="font-medium">Break down 2026 by quarters</span>
+                      </div>
+                      
+                      {useQuarterlyBreakdown && (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {['Q1', 'Q2', 'Q3', 'Q4'].map((quarter) => (
+                              <div key={quarter} className="space-y-2">
+                                <label className="text-sm font-medium">{quarter} 2026</label>
+                                <input
+                                  type="number"
+                                  value={quarterlyRevenue2026[quarter as keyof typeof quarterlyRevenue2026] || 0}
+                                  onChange={(e) => setQuarterlyRevenue2026(prev => ({
+                                    ...prev,
+                                    [quarter]: Number(e.target.value) || 0
+                                  }))}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="0"
+                                />
+                                <div className="text-xs text-gray-500">
+                                  ${(quarterlyRevenue2026[quarter as keyof typeof quarterlyRevenue2026] || 0) / 1000000}M
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium">Total 2026:</span>
+                            <span className="font-bold text-blue-600">
+                              ${(Object.values(quarterlyRevenue2026).reduce((sum, val) => sum + val, 0) / 1000000).toFixed(1)}M
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                const total2026 = manualRevenue[2026] || 4100000
+                                const quarterValue = total2026 / 4
+                                setQuarterlyRevenue2026({
+                                  Q1: quarterValue,
+                                  Q2: quarterValue,
+                                  Q3: quarterValue,
+                                  Q4: quarterValue,
+                                })
+                              }}
+                              className="px-3 py-1 bg-green-100 text-green-800 rounded-md hover:bg-green-200 transition-colors text-sm"
+                            >
+                              Distribute 2026 evenly
+                            </button>
+                            <button
+                              onClick={() => {
+                                const total = Object.values(quarterlyRevenue2026).reduce((sum, val) => sum + val, 0)
+                                setManualRevenue(prev => ({
+                                  ...prev,
+                                  2026: total
+                                }))
+                              }}
+                              className="px-3 py-1 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 transition-colors text-sm"
+                            >
+                              Update 2026 total
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Quick actions */}
+                    <div className="flex gap-2 items-center">
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium">Start Year:</label>
+                        <select
+                          value={manualRevenueGrowthStartYear}
+                          onChange={e => setManualRevenueGrowthStartYear(Number(e.target.value))}
+                          className="w-20 px-2 py-1 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          {projectionYears.map(year => (
+                            <option key={year} value={year}>{year}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium">Growth Rate (%):</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={(manualRevenueGrowthRate * 100).toFixed(0)}
+                          onChange={e => setManualRevenueGrowthRate(Number(e.target.value) / 100)}
+                          className="w-16 px-2 py-1 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="20"
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const baseRevenue = manualRevenue[manualRevenueGrowthStartYear] || 4100000
+                          const newRevenue: { [year: number]: number } = {}
+                          projectionYears.forEach(year => {
+                            if (year < manualRevenueGrowthStartYear) {
+                              // Keep existing values for years before the start year
+                              newRevenue[year] = manualRevenue[year] || 0
+                            } else {
+                              // Apply growth from the start year
+                              const yearsFromStart = year - manualRevenueGrowthStartYear
+                              newRevenue[year] = baseRevenue * Math.pow(1 + manualRevenueGrowthRate, yearsFromStart)
+                            }
+                          })
+                          setManualRevenue(newRevenue)
+                        }}
+                        className="px-4 py-2 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 transition-colors text-sm"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        onClick={() => {
+                          const newRevenue: { [year: number]: number } = {}
+                          projectionYears.forEach(year => {
+                            newRevenue[year] = 0
+                          })
+                          setManualRevenue(newRevenue)
+                        }}
+                        className="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 transition-colors text-sm"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Card className="w-full">
+              <CardHeader>
+                <CardTitle>Revenue</CardTitle>
+                <CardDescription>
+                  {useManualRevenue ? 'Manual revenue input' : 'Project-based revenue calculation'} from 2026-2031
+                </CardDescription>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <ChartContainer
+                  config={{
+                    contractRevenue: {
+                      label: "Contract Revenue",
+                      color: "hsl(var(--chart-1))",
+                    },
+                  }}
+                  className="h-[300px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="year" fontSize={12} />
+                      <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                      <ChartTooltip
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload
+                            return (
+                              <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                <p className="font-semibold">{data.year}</p>
+                                <p className="text-sm text-blue-500">
+                                  Contract Revenue: ${data.contractRevenue.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">FTE: {data.fte}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Profit Margin: {data.profitMargin.toFixed(1)}%
+                                </p>
+                              </div>
+                            )
+                          }
+                          return null
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="contractRevenue" fill="var(--color-contractRevenue)" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+
+                  <Card className="w-full">
+              <CardHeader>
+                <CardTitle>Profit Margins</CardTitle>
+                <CardDescription>Net income and profit margin trends</CardDescription>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <ChartContainer
+                  config={{
+                    netIncome: {
+                      label: "Net Income",
+                      color: "hsl(var(--chart-3))",
+                    },
+                    profitMargin: {
+                      label: "Profit Margin %",
+                      color: "hsl(var(--chart-4))",
+                    },
+                  }}
+                  className="h-[400px]"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={businessProjections} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="year" fontSize={12} />
+                      <YAxis
+                        yAxisId="left"
+                        tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
+                        fontSize={12}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tickFormatter={(value) => `${value.toFixed(0)}%`}
+                        fontSize={12}
+                      />
+                      <ChartTooltip
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload
+                            return (
+                              <div className="bg-background border rounded-lg p-3 shadow-lg">
+                                <p className="font-semibold">{data.year}</p>
+                                <p className="text-sm text-green-500">Net Income: ${data.netIncome.toLocaleString()}</p>
+                                <p className="text-sm text-blue-500">Profit Margin: {data.profitMargin.toFixed(1)}%</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Revenue: ${data.contractRevenue.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Expenses: ${data.totalExpenses.toLocaleString()}
+                                </p>
+                              </div>
+                            )
+                          }
+                          return null
+                        }}
+                      />
+                      <Legend />
+                      <Bar yAxisId="left" dataKey="netIncome" fill="var(--color-netIncome)" radius={[4, 4, 0, 0]} />
+                      <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="profitMargin"
+                        stroke="var(--color-profitMargin)"
+                        strokeWidth={3}
+                        dot={{ r: 4 }}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+                <Card className="w-full">
+            <CardHeader>
+              <CardTitle>Revenue Breakdown by Year</CardTitle>
+              <CardDescription>Detailed financial projections with key metrics</CardDescription>
+            </CardHeader>
+                  <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                    <div className="overflow-x-auto w-full">
+                      <table className="w-full text-sm md:text-base">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2">Year</th>
+                      <th className="text-left p-2">FTE</th>
+                      <th className="text-left p-2">Contract Revenue</th>
+                      <th className="text-left p-2">Total Expenses</th>
+                      <th className="text-left p-2">Net Income</th>
+                      <th className="text-left p-2">Profit Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {businessProjections.map((proj) => (
+                      <tr key={proj.year} className="border-b hover:bg-muted/50">
+                        <td className="p-2 font-medium">{proj.year}</td>
+                        <td className="p-2">{proj.fte}</td>
+                        <td className="p-2">${proj.contractRevenue.toLocaleString()}</td>
+                        <td className="p-2">${proj.totalExpenses.toLocaleString()}</td>
+                        <td className="p-2 font-medium text-green-600">${proj.netIncome.toLocaleString()}</td>
+                        <td className="p-2">{proj.profitMargin.toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="cashflow" className="flex-1 overflow-auto space-y-4">
+                <Card className="w-full">
+            <CardHeader>
+              <CardTitle>Cash Flow Projections</CardTitle>
+              <CardDescription>
+                Projected cash flow from {projectionYears[0]} to {projectionYears[projectionYears.length - 1]}
+              </CardDescription>
+              <div className="flex items-center gap-2 mt-2">
+                <label className="text-sm font-medium">External Equity:</label>
+                <input
+                  type="number"
+                  value={startingCash}
+                  onChange={(e) => setStartingCash(Number(e.target.value))}
+                  className="w-32 px-2 py-1 border rounded text-sm"
+                />
+              </div>
+            </CardHeader>
+                  <CardContent className="px-2 md:px-4 py-2 md:py-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 text-sm">
+                <div>
+                  <div className="font-semibold">External Equity</div>
+                  <div className="text-2xl font-bold text-primary">${(startingCash / 1000).toFixed(0)}K</div>
+                </div>
+                <div>
+                  <div className="font-semibold">Total Revenue</div>
+                  <div className="text-2xl font-bold text-blue-600">
+                    ${(cashFlowProjections.reduce((sum, p) => sum + p.revenue, 0) / 1000000).toFixed(1)}M
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold">Total Expenses</div>
+                  <div className="text-2xl font-bold text-red-600">
+                    ${(cashFlowProjections.reduce((sum, p) => sum + p.expenses, 0) / 1000000).toFixed(1)}M
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold">Total Cash Flow</div>
+                  <div className="text-2xl font-bold text-green-600">
+                    ${(cashFlowProjections.reduce((sum, p) => sum + p.cashAmount, 0) / 1000000).toFixed(1)}M
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold">
+                    Ending Cash ({cashFlowProjections[cashFlowProjections.length - 1].year})
+                  </div>
+                  <div className="text-2xl font-bold text-purple-600">
+                    ${(cashFlowProjections[cashFlowProjections.length - 1].cumulativeCash / 1000000).toFixed(1)}M
+                  </div>
+                </div>
+              </div>
+
+
+              <ChartContainer
+                config={{
+                  revenue: {
+                    label: "Revenue",
+                    color: "hsl(var(--chart-1))",
+                  },
+                  expenses: {
+                    label: "Expenses",
+                    color: "hsl(var(--chart-2))",
+                  },
+                  cashAmount: {
+                    label: "Cash Flow",
+                    color: "hsl(var(--chart-3))",
+                  },
+                  cumulativeCash: {
+                    label: "Cumulative Cash",
+                    color: "hsl(var(--chart-4))",
+                  },
+                }}
+                className="h-[400px]"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={cashFlowProjections} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" fontSize={12} />
+                    <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                    <ChartTooltip
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload
+                          return (
+                            <div className="bg-background border rounded-lg p-3 shadow-lg">
+                              <p className="font-semibold">{data.year}</p>
+                              <p className="font-bold" style={{ color: 'hsl(var(--chart-1))' }}>Revenue: ${data.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                              <p className="font-bold" style={{ color: 'hsl(var(--chart-2))' }}>Expenses: ${data.expenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                              <p className="font-bold" style={{ color: 'hsl(var(--chart-3))' }}>Cash Flow: ${data.cashAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                              <p className="font-bold" style={{ color: 'hsl(var(--chart-4))' }}>Cumulative Cash: ${data.cumulativeCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                            </div>
+                          )
+                        }
+                        return null
+                      }}
+                    />
+                    <Legend />
+                    <Bar dataKey="revenue" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="expenses" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="cashAmount" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} />
+                    <Line
+                      type="monotone"
+                      dataKey="cumulativeCash"
+                      stroke="hsl(var(--chart-4))"
+                      strokeWidth={3}
+                      dot={{ r: 5, fill: 'hsl(var(--chart-4))', stroke: 'hsl(var(--chart-4))' }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+
+ {/* Table for yearly breakdown */}
+              <div className="overflow-x-auto w-full mb-6">
+                <table className="w-full text-sm md:text-base">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2">Year</th>
+                      <th className="text-left p-2">Revenue</th>
+                      <th className="text-left p-2">Expenses</th>
+                      <th className="text-left p-2">Cash Flow</th>
+                      <th className="text-left p-2">Cumulative Cash</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cashFlowProjections.map((proj) => (
+                      <tr key={proj.year} className="border-b hover:bg-muted/50">
+                        <td className="p-2 font-medium">{proj.year}</td>
+                        <td className="p-2">${proj.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                        <td className="p-2">${proj.expenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                        <td className={`p-2 font-medium ${proj.cashAmount < 0 ? 'text-red-600' : 'text-black'}`}>${proj.cashAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                        <td className={`p-2 font-medium ${proj.cumulativeCash < 0 ? 'text-red-600' : 'text-black'}`}>${proj.cumulativeCash.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+        </TabsContent>
+        <TabsContent value="overview" className="flex-1 overflow-auto space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <Card className="w-full">
+              <CardHeader>
+                <CardTitle>Business Projections Summary</CardTitle>
+                <CardDescription>Key financial metrics for 2026-2031</CardDescription>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <div className="space-y-4">
+                  {businessProjections.map((proj) => (
+                    <div key={proj.year} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                      <div>
+                        <div className="font-medium">{proj.year}</div>
+                        <div className="text-sm text-muted-foreground">{proj.fte} FTE</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold">${(proj.contractRevenue / 1000000).toFixed(1)}M</div>
+                        <div className="text-sm text-muted-foreground">{proj.profitMargin.toFixed(1)}% margin</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+                  <Card className="w-full">
+              <CardHeader>
+                <CardTitle>Project Distribution</CardTitle>
+                <CardDescription>Breakdown by practice area and status</CardDescription>
+              </CardHeader>
+                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-2">By Practice Area</h4>
+                    <div className="space-y-2">
+                      {practiceAreaData.slice(0, 3).map((area, index) => (
+                        <div key={index} className="flex justify-between items-center">
+                          <span className="text-sm">{area.area}</span>
                           <div className="text-right">
-                            <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
-                            <div className="text-sm text-muted-foreground">
-                              ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
+                            <span className="font-medium">{area.count} projects</span>
+                            <div className="text-xs text-muted-foreground">${(area.totalValue / 1000).toFixed(0)}K</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium mb-2">By Status</h4>
+                    <div className="space-y-2">
+                      {statusData.map((status, index) => (
+                        <div key={index} className="flex justify-between items-center">
+                          <span className="text-sm">{status.status}</span>
+                          <div className="text-right">
+                            <span className="font-medium">{status.count} projects</span>
+                            <div className="text-xs text-muted-foreground">
+                              ${(status.totalValue / 1000).toFixed(0)}K
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+                <Card className="w-full">
+            <CardHeader>
+              <CardTitle>Geographic Distribution</CardTitle>
+              <CardDescription>Projects by state with total values</CardDescription>
+            </CardHeader>
+                  <CardContent className="px-2 md:px-4 py-2 md:py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {mapStateData.map((stateData, index) => (
+                  <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                    <div>
+                      <div className="font-medium">{stateCoordinates[stateData.state]?.name || stateData.state}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {stateData.count} project{stateData.count !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
+                      <div className="text-sm text-muted-foreground">
+                        ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
         )}
         {allowedTabs.includes('notetaker') && (
           <TabsContent value="notetaker">
@@ -3443,24 +4223,9 @@ export default function BusinessPlanDashboard() {
               <div className="flex items-start justify-between mb-4">
                 <h2 className="text-xl font-bold">Notetaker</h2>
                 {/* Pie chart for note distribution */}
-                <div className="flex flex-col items-end min-w-[260px]">
-                  <PieChart width={110} height={110}>
-                    <Pie
-                      data={categories.map(cat => ({ name: cat, value: notes.filter(n => n.category === cat).length }))}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={45}
-                      label={false}
-                    >
-                      {categories.map((cat, idx) => (
-                        <Cell key={`cell-${cat}`} fill={["#2563eb","#16a34a","#f59e42","#a21caf","#e11d48","#0ea5e9","#fbbf24","#10b981","#f43f5e","#6366f1"][idx % 10]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value, name) => [`${value} notes`, name]} />
-                  </PieChart>
-                  <div className="mt-2">
+                <div className="flex flex-col md:flex-row items-end md:items-start min-w-[180px] md:min-w-[260px] gap-2 md:gap-4">
+                  <PieChart width={90} height={90} className="mx-auto md:mx-0" />
+                  <div className="mt-2 md:mt-0">
                     <Legend layout="vertical" align="left" verticalAlign="middle" />
                   </div>
                 </div>
@@ -3481,7 +4246,7 @@ export default function BusinessPlanDashboard() {
                     }
                   }
                 }}
-                className="flex flex-col md:flex-row gap-2 mb-6"
+                className="flex flex-col gap-2 md:flex-row md:gap-2 mb-6 w-full"
               >
                 <input
                   type="text"
@@ -3514,10 +4279,10 @@ export default function BusinessPlanDashboard() {
                     required
                   />
                 )}
-                <Button type="submit" className="px-4">Add Note</Button>
+                <Button type="submit" className="px-4 py-2 text-base w-full md:w-auto">Add Note</Button>
               </form>
               {/* Notetaker filter bar */}
-              <div className="flex gap-2 mb-4">
+              <div className="flex gap-2 mb-4 overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
                 <button
                   className={`px-3 py-1 rounded ${noteFilter === 'All' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
                   onClick={() => setNoteFilter('All')}
