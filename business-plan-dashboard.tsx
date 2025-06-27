@@ -37,7 +37,17 @@ import {
 import Link from 'next/link'
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
-import { Input } from "@/components/ui/input"
+import { Input } from "./components/ui/input"
+import { cleanFee, parseCSV, aggregateProjectData, calculateMonthlyRevenue, getQuarter } from "@/lib/data-processing"
+import { calculateExpenses, calculateRevenue, getFTE, updateExpenseParam, defaultExpenseParams } from "@/lib/financial-calculations"
+import { handleExportCurrentTabPDF, handleExportAllTabsPDF } from "@/lib/pdf-export"
+import { handleFileUpload, getQuarterStatus, filterProjects } from "@/lib/project-management"
+import { StateMap } from "@/components/state-map"
+import { MultiSelectDropdown } from "@/components/ui/multi-select-dropdown"
+import dynamic from "next/dynamic"
+import ReactMarkdown from "react-markdown"
+// Dynamically import the markdown editor to avoid SSR issues
+const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false })
 
 // Set Mapbox access token
 // d3.select("svg").attr("width", "100%").attr("height", "100%")
@@ -94,1008 +104,6 @@ const stateCoordinates: { [key: string]: { lat: number; lng: number; name: strin
   WV: { lat: 38.491226, lng: -80.95457, name: "West Virginia" },
   WI: { lat: 44.268543, lng: -89.616508, name: "Wisconsin" },
   WY: { lat: 42.755966, lng: -107.30249, name: "Wyoming" },
-}
-
-// Enhanced function to clean and parse monetary values
-const cleanFee = (str: string | number) => {
-  if (!str) return 0
-  if (typeof str === "number") return str
-
-  const input = str.toString().trim().toLowerCase()
-  
-  // Handle common text formats that should be converted to dollar values
-  const textToValueMap: { [key: string]: number } = {
-    // Common fee ranges
-    "number": 500000, // Default medium project
-    "general": 750000, // Default large project
-    "accounting": 300000, // Default small project
-    "small": 250000,
-    "medium": 500000,
-    "large": 1000000,
-    "extra large": 2000000,
-    "xl": 2000000,
-    "xxl": 3000000,
-    
-    // Common project types
-    "k12": 400000,
-    "higher education": 750000,
-    "university": 800000,
-    "school district": 450000,
-    "public school": 400000,
-    "private school": 350000,
-    "college": 600000,
-    "community college": 300000,
-    
-    // Common fee descriptions
-    "standard": 500000,
-    "premium": 1000000,
-    "basic": 300000,
-    "comprehensive": 1200000,
-    "full service": 900000,
-    "consulting": 400000,
-    "design": 600000,
-    "planning": 350000,
-    "architecture": 700000,
-    "engineering": 500000,
-    
-    // Common abbreviations
-    "std": 500000,
-    "prem": 1000000,
-    "comp": 1200000,
-    "full": 900000,
-    "cons": 400000,
-    "arch": 700000,
-    "eng": 500000,
-  }
-
-  // Check if the input matches any text format
-  for (const [text, value] of Object.entries(textToValueMap)) {
-    if (input === text || input.includes(text)) {
-      return value
-    }
-  }
-
-  // Handle currency symbols and common formatting
-  let cleaned = input
-  
-  // Remove currency symbols and common prefixes/suffixes
-  cleaned = cleaned.replace(/[\$€£¥₹]/g, '') // Remove currency symbols
-  cleaned = cleaned.replace(/k\b/gi, '000') // Convert K to thousands
-  cleaned = cleaned.replace(/m\b/gi, '000000') // Convert M to millions
-  cleaned = cleaned.replace(/b\b/gi, '000000000') // Convert B to billions
-  cleaned = cleaned.replace(/thousand/gi, '000')
-  cleaned = cleaned.replace(/million/gi, '000000')
-  cleaned = cleaned.replace(/billion/gi, '000000000')
-  
-  // Handle various number formats
-  // Remove spaces, commas, and other separators
-  cleaned = cleaned.replace(/[\s,]/g, '')
-  
-  // Handle parentheses (negative numbers)
-  if (cleaned.includes('(') && cleaned.includes(')')) {
-    cleaned = '-' + cleaned.replace(/[()]/g, '')
-  }
-  
-  // Handle different decimal separators (comma vs period)
-  if (cleaned.includes(',') && !cleaned.includes('.')) {
-    // If there's a comma but no period, it might be a decimal separator
-    cleaned = cleaned.replace(',', '.')
-  }
-  
-  // Remove all non-numeric characters except decimal points and negative signs
-  cleaned = cleaned.replace(/[^\d.-]/g, "")
-
-  // Handle cases where there might be multiple decimal points
-  const parts = cleaned.split(".")
-  if (parts.length > 2) {
-    // If more than one decimal point, assume the last one is the decimal separator
-    // and the others are thousands separators
-    cleaned = parts.slice(0, -1).join("") + "." + parts[parts.length - 1]
-  }
-
-  // Parse the cleaned string
-  const parsed = Number.parseFloat(cleaned)
-
-  // Return 0 if parsing failed, otherwise return the parsed number
-  return isNaN(parsed) ? 0 : parsed
-}
-
-// Original project data for charts tab - using actual CSV data
-const aggregateProjectData = () => {
-  const projects = [
-    {
-      Start_Date: "8/12/2023",
-      Completion_Date: "6/7/2024",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "BPS Capital Advisory Services",
-      City: "Roxbury",
-      State: "MA",
-      Date_Awarded: "10/2/2023",
-      detail_Name: "BPS Capital Advisory Services",
-      Studio: "Austin Studio 01",
-      Fee: 141500,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "2/27/2024",
-      Completion_Date: "9/19/2025",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "East Side Union HSD Master Plan",
-      City: "San Jose",
-      State: "CA",
-      Date_Awarded: "2/12/2024",
-      detail_Name: "East Side Union HSD Master Plan",
-      Studio: "San Francisco Studio 01",
-      Fee: 348000,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "2/17/2024",
-      Completion_Date: "10/31/2025",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "MPS Long Range Facilities Master Plan",
-      City: "Milwaukee",
-      State: "WI",
-      Date_Awarded: "3/4/2024",
-      detail_Name: "MPS Long Range Facilities Master Plan",
-      Studio: "Austin Studio 01",
-      Fee: 933028.85,
-      Reimbursables: "$15,000.00",
-    },
-    {
-      Start_Date: "6/26/2024",
-      Completion_Date: "10/31/2025",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "OUSD Facilities Master Planning Services",
-      City: "Oakland",
-      State: "CA",
-      Date_Awarded: "8/2/2024",
-      detail_Name: "OUSD Facilities Master Planning Services",
-      Studio: "San Francisco Studio 01",
-      Fee: 626189.75,
-      Reimbursables: "$122,985.00",
-    },
-    {
-      Start_Date: "11/9/2024",
-      Completion_Date: "12/31/2025",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "BPS: Long-Term Facilties Plan",
-      City: "Roxbury",
-      State: "MA",
-      Date_Awarded: "10/7/2024",
-      detail_Name: "BPS: Long-Term Facilties Plan",
-      Studio: "Austin Studio 01",
-      Fee: 200000,
-      Reimbursables: "$10,000.00",
-    },
-    {
-      Start_Date: "8/17/2024",
-      Completion_Date: "8/7/2027",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "Colorado Springs D11: Palmer High School",
-      City: "Colorado Springs",
-      State: "CO",
-      Date_Awarded: "8/5/2024",
-      detail_Name: "Colorado Springs D11: Palmer High School",
-      Studio: "Austin Studio 01",
-      Fee: 976137.4,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "2/1/2025",
-      Completion_Date: "7/17/2026",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "Jeffco Public Schools: Capital MP",
-      City: "Golden",
-      State: "CO",
-      Date_Awarded: "",
-      detail_Name: "Jeffco Public Schools: Capital MP",
-      Studio: "Austin Studio 01",
-      Fee: 774900.33,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "7/17/2025",
-      Completion_Date: "12/17/2025",
-      "Practice Area": "K12 Education",
-      Status: "Awaiting",
-      Project_Name: "Asheville City Schools",
-      City: "Asheville",
-      State: "NC",
-      Date_Awarded: "",
-      detail_Name: "Asheville City Schools",
-      Studio: "Raleigh Charlotte Studio 01",
-      Fee: 300000,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "Syracuse: Staffing and Utilization",
-      City: "Syracuse",
-      State: "NY",
-      Date_Awarded: "",
-      detail_Name: "Syracuse: Staffing and Utilization",
-      Studio: "Austin Studio 01",
-      Fee: 0,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "MCPS_Facilities Master Plan",
-      City: "Rockville",
-      State: "MD",
-      Date_Awarded: "",
-      detail_Name: "MCPS_Facilities Master Plan",
-      Studio: "Austin Studio 01",
-      Fee: 0,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "Mixed Use + Retail",
-      Status: "Awaiting",
-      Project_Name: "Brevard County_ Ed Facilities Planning",
-      City: "Viera",
-      State: "FL",
-      Date_Awarded: "",
-      detail_Name: "Brevard County_ Ed Facilities Planning",
-      Studio: "Austin Studio 01",
-      Fee: 0,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "3/25/2025",
-      Completion_Date: "7/17/2025",
-      "Practice Area": "K12 Education",
-      Status: "Active",
-      Project_Name: "NHPS",
-      City: "New Haven",
-      State: "CT",
-      Date_Awarded: "3/1/2025",
-      detail_Name: "NHPS",
-      Studio: "Stamford Studio 01",
-      Fee: 99000,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "7/17/2025",
-      Completion_Date: "12/31/2025",
-      "Practice Area": "K12 Education",
-      Status: "Awaiting",
-      Project_Name: "Fairfax County Public Schools",
-      City: "Faifax",
-      State: "MD",
-      Date_Awarded: "6/1/2025",
-      detail_Name: "Fairfax County Public Schools",
-      Studio: "Austin Studio 01",
-      Fee: 700000,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "7/17/2025",
-      Completion_Date: "10/1/2025",
-      "Practice Area": "K12 Education",
-      Status: "Awaiting",
-      Project_Name: "Montgomery County Public Schools",
-      City: "Montgomery",
-      State: "MD",
-      Date_Awarded: "6/1/2025",
-      detail_Name: "Montgomery County Public Schools",
-      Studio: "Austin Studio 01",
-      Fee: 400000,
-      Reimbursables: "",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "DCPS Capital FY25",
-      City: "Washington",
-      State: "DC",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "200,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "DCPS Capital FY 26",
-      City: "Washington",
-      State: "DC",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "220,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "DCPS Capital Fy27",
-      City: "Washington",
-      State: "DC",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "165,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "KIPP DC Capital",
-      City: "Washington",
-      State: "DC",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "95,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "KIPP DC Advisory",
-      City: "Washington",
-      State: "DC",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "35,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "El Monte High School District",
-      City: "El Monte",
-      State: "CA",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "202,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "Eden ROP",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "56,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "Burbank USd",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "350,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "Colorado Springs D11",
-      City: "",
-      State: "CO",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "650,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "DC Public Schools Boundary Study",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "540,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "DC Puliblic Schools MFP",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "540,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "Stockton USD",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "450,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "Pomona USD",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "400,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "El Monte City Schools",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "250,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "Sonoma County USD",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "150,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "Anne Arundel County",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "650,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "DC International School",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "30,000",
-    },
-    {
-      Start_Date: "",
-      Completion_Date: "",
-      "Practice Area": "",
-      Status: "Active",
-      Project_Name: "KIPP Texas",
-      City: "",
-      State: "",
-      Date_Awarded: "",
-      detail_Name: "",
-      Studio: "",
-      Fee: 0,
-      Reimbursables: "40,000",
-    },
-  ]
-
-  return projects.map((row) => ({
-    name: row.Project_Name || row.detail_Name || "Unknown Project",
-    totalFee: cleanFee(row.Fee || row.Reimbursables),
-    state: row.State || "",
-    city: row.City || "",
-    startDate: row.Start_Date || "",
-    endDate: row.Completion_Date || "",
-    dateAwarded: row.Date_Awarded || row.Start_Date || "",
-    status: row.Status || "Active",
-    practiceArea: row["Practice Area"] || "",
-    reimbursables: cleanFee(row.Reimbursables),
-    studio: row.Studio || "",
-  }))
-}
-
-// Calculate monthly revenue distribution for original charts
-const calculateMonthlyRevenue = (projects: any[]) => {
-  const monthlyData = new Map()
-
-  projects.forEach((project) => {
-    const startDate = new Date(project.startDate)
-    const endDate = new Date(project.endDate)
-
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return
-
-    let durationMonths = (endDate.getFullYear() - startDate.getFullYear()) * 12 + (endDate.getMonth() - startDate.getMonth()) + 1
-    if (durationMonths <= 0) {
-      durationMonths = 1
-    }
-    
-    const monthlyRevenue = project.totalFee / durationMonths
-
-    const currentDate = new Date(startDate)
-    for (let i = 0; i < durationMonths; i++) {
-      const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`
-
-      if (!monthlyData.has(monthKey)) {
-        monthlyData.set(monthKey, {
-          month: monthKey,
-          revenue: 0,
-          projects: [],
-        })
-      }
-
-      const existing = monthlyData.get(monthKey)
-      existing.revenue += monthlyRevenue
-      if (!existing.projects.includes(project.name)) {
-        existing.projects.push(project.name)
-      }
-
-      currentDate.setMonth(currentDate.getMonth() + 1)
-    }
-  })
-
-  return Array.from(monthlyData.values()).sort((a, b) => a.month.localeCompare(b.month))
-}
-
-// Function to get quarter from date for original charts
-const getQuarter = (dateString: string) => {
-  const date = new Date(dateString)
-  const year = date.getFullYear()
-  const month = date.getMonth() + 1
-  const quarter = Math.ceil(month / 3)
-  return `Q${quarter} ${year}`
-}
-
-const parseCSV = (csvText: string) => {
-  const lines = csvText.trim().split("\n")
-  const headers = lines[0].split(",").map((h) => h.trim().replace(/"/g, ""))
-
-  const data = lines.slice(1).map((line) => {
-    // More robust CSV parsing that handles quoted values with commas
-    const values: string[] = []
-    let current = ""
-    let inQuotes = false
-    
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i]
-      
-      if (char === '"') {
-        inQuotes = !inQuotes
-      } else if (char === ',' && !inQuotes) {
-        values.push(current.trim())
-        current = ""
-      } else {
-        current += char
-      }
-    }
-    values.push(current.trim()) // Add the last value
-    
-    const row: any = {}
-
-    headers.forEach((header, index) => {
-      const value = values[index] || ""
-      row[header] = value.replace(/"/g, "") // Remove any remaining quotes
-    })
-
-    return row
-  })
-
-  // Transform the data to match our expected format - now with enhanced parsing and flexible field handling
-  const transformedData = data
-    .map((row, index) => {
-      // Get project name from various possible column names
-      const projectName = row.Project_Name || row.detail_Name || row.Name || row.Project || row.ProjectName || `Project ${index + 1}`
-      
-      // Get fee from various possible column names - check both Fee and Reimbursables columns
-      let feeValue = row.Fee || row.fee || row.Value || row.value || row.Amount || row.amount || row.Contract_Value || row.ContractValue || 0
-      
-      // If fee is 0 or empty, check if there's a value in Reimbursables that looks like a fee
-      if (!feeValue || feeValue === "0" || feeValue === "") {
-        const reimbursablesValue = row.Reimbursables || row.reimbursables || row.Reimbursable || row.reimbursable || ""
-        // If reimbursables looks like a fee (contains numbers and possibly commas), use it
-        if (reimbursablesValue && /[\d,]/.test(reimbursablesValue)) {
-          feeValue = reimbursablesValue
-        }
-      }
-      
-      // Get other fields with fallbacks
-      const state = row.State || row.state || row.ST || row.st || ""
-      const city = row.City || row.city || ""
-      const startDate = row.Start_Date || row.StartDate || row.start_date || row.startdate || ""
-      const endDate = row.Completion_Date || row.EndDate || row.end_date || row.enddate || row.CompletionDate || ""
-      const dateAwarded = row.Date_Awarded || row.DateAwarded || row.date_awarded || row.dateawarded || startDate || ""
-      const status = row.Status || row.status || "Active"
-      const practiceArea = row["Practice Area"] || row.PracticeArea || row.practice_area || row.practicearea || ""
-      const reimbursables = row.Reimbursables || row.reimbursables || row.Reimbursable || row.reimbursable || 0
-      const studio = row.Studio || row.studio || ""
-
-      return {
-        name: projectName,
-        totalFee: cleanFee(feeValue),
-        state: state,
-        city: city,
-        startDate: startDate,
-        endDate: endDate,
-        dateAwarded: dateAwarded,
-        status: status,
-        practiceArea: practiceArea,
-        reimbursables: cleanFee(reimbursables),
-        studio: studio,
-      }
-    })
-    .filter((project) => {
-      // Only require project name and a valid fee value
-      return project.name && 
-             project.name !== "Unknown Project" && 
-             project.totalFee > 0
-    })
-
-  // Aggregate by project name to eliminate duplicates
-  const aggregatedData = new Map()
-  
-  transformedData.forEach((project) => {
-    const key = project.name
-    if (!aggregatedData.has(key)) {
-      aggregatedData.set(key, {
-        ...project,
-        totalFee: 0,
-        reimbursables: 0,
-      })
-    }
-    
-    const existing = aggregatedData.get(key)
-    existing.totalFee += project.totalFee
-    existing.reimbursables += project.reimbursables
-  })
-
-  return Array.from(aggregatedData.values())
-}
-
-// Remove the old MapboxMap component and replace with StateMap
-const StateMap = ({ projects, onStateClick }: { projects: any[]; onStateClick: (state: string) => void }) => {
-  const mapContainer = useRef<HTMLDivElement>(null)
-  const [mapError, setMapError] = useState<string | null>(null)
-  const [geoData, setGeoData] = useState<any>(null)
-
-  // Aggregate projects by state
-  const stateData = useMemo(() => {
-    const data = new Map<string, { count: number; totalValue: number; projects: any[] }>()
-    projects.forEach((project) => {
-      const state = project.state
-      if (!data.has(state)) {
-        data.set(state, { count: 0, totalValue: 0, projects: [] })
-      }
-      const existing = data.get(state)!
-      existing.count += 1
-      existing.totalValue += project.totalFee
-      existing.projects.push(project)
-    })
-    return data
-  }, [projects])
-
-  // Load GeoJSON on mount
-  useEffect(() => {
-    fetch('/USStates1.geojson')
-      .then(res => res.json())
-      .then(setGeoData)
-      .catch(err => setMapError('Failed to load US states GeoJSON'))
-  }, [])
-
-  useEffect(() => {
-    if (!mapContainer.current || !geoData) return
-
-    const loadMap = () => {
-      try {
-        d3.select(mapContainer.current).selectAll('*').remove()
-        const width = mapContainer.current?.clientWidth || 800
-        const height = 500
-        const svg = d3.select(mapContainer.current)
-          .append('svg')
-          .attr('width', width)
-          .attr('height', height)
-
-        // D3 projection and path
-        const projection = d3.geoAlbersUsa().fitSize([width, height], geoData)
-        const path = d3.geoPath<any, any>().projection(projection)
-
-        // Color scale
-        const maxValue = Math.max(...Array.from(stateData.values()).map(d => d.totalValue), 1)
-        const colorScale = d3.scaleSequential(d3.interpolateBlues).domain([0, maxValue])
-
-        // Draw states
-        svg.selectAll('path')
-          .data(geoData.features)
-          .enter()
-          .append('path')
-          .attr('d', (d: any) => path(d) as string)
-          .attr('fill', (d: any) => {
-            const stateCode = d.properties.STUSPS
-            const data = stateData.get(stateCode)
-            return data ? colorScale(data.totalValue) : '#e5e7eb'
-          })
-          .attr('stroke', '#fff')
-          .attr('stroke-width', 1)
-          .attr('cursor', 'pointer')
-          .on('click', (event: any, d: any) => onStateClick(d.properties.STUSPS))
-          .on('mouseover', function(event: any, d: any) {
-            d3.select(this).attr('stroke-width', 3).attr('stroke', '#000')
-            const stateCode = d.properties.STUSPS
-            const data = stateData.get(stateCode)
-            const tooltip = d3.select('body').append('div')
-              .attr('class', 'tooltip')
-              .style('position', 'absolute')
-              .style('background', 'rgba(0,0,0,0.8)')
-              .style('color', 'white')
-              .style('padding', '8px')
-              .style('border-radius', '4px')
-              .style('font-size', '12px')
-              .style('pointer-events', 'none')
-              .style('z-index', '1000')
-            tooltip.html(`
-              <strong>${d.properties.NAME} (${stateCode})</strong><br/>
-              Projects: ${data ? data.count : 0}<br/>
-              Total Value: $${data ? (data.totalValue / 1000).toFixed(0) : 0}K
-            `)
-              .style('left', (event.pageX + 10) + 'px')
-              .style('top', (event.pageY - 10) + 'px')
-          })
-          .on('mousemove', function(event: any) {
-            d3.select('.tooltip')
-              .style('left', (event.pageX + 10) + 'px')
-              .style('top', (event.pageY - 10) + 'px')
-          })
-          .on('mouseout', function() {
-            d3.select(this).attr('stroke-width', 1).attr('stroke', '#fff')
-            d3.selectAll('.tooltip').remove()
-          })
-
-        // Add state labels (optional, can be omitted for clarity on mobile)
-        svg.selectAll('text')
-          .data(geoData.features)
-          .enter()
-          .append('text')
-          .attr('transform', (d: any) => {
-            const centroid = path.centroid(d)
-            return `translate(${centroid[0]},${centroid[1]})`
-          })
-          .attr('text-anchor', 'middle')
-          .attr('dominant-baseline', 'middle')
-          .attr('font-size', '10px')
-          .attr('fill', '#222')
-          .attr('pointer-events', 'none')
-          .text((d: any) => d.properties.STUSPS)
-
-        // Add title
-        svg.append('text')
-          .attr('x', width / 2)
-          .attr('y', 20)
-          .attr('text-anchor', 'middle')
-          .attr('font-size', '16px')
-          .attr('font-weight', 'bold')
-          .text('State Project Distribution')
-      } catch (error) {
-        console.error('Error creating map:', error)
-        setMapError(`Failed to create map: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      }
-    }
-    loadMap()
-  }, [stateData, geoData, onStateClick])
-
-  return (
-    <div className="w-full">
-      {mapError ? (
-        <div className="w-full h-[500px] rounded-lg border shadow-sm bg-gray-100 flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-red-600 font-semibold mb-2">Map Error</div>
-            <div className="text-sm text-gray-600">{mapError}</div>
-          </div>
-        </div>
-      ) : (
-        <div ref={mapContainer} className="w-full h-[500px] rounded-lg border shadow-sm" />
-      )}
-      {/* Enhanced Legend */}
-      <div className="mt-4 flex items-center justify-center gap-6 text-sm flex-wrap">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-gray-200 rounded border"></div>
-          <span>No Projects</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-blue-100 rounded"></div>
-          <span>Low Value</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-blue-300 rounded"></div>
-          <span>Medium Value</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-blue-500 rounded"></div>
-          <span>High Value</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-blue-700 rounded"></div>
-          <span>Very High Value</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Default expense parameters
-const defaultExpenseParams = {
-  avgSalary: 150000,
-  healthcarePerEmployee: 18000,
-  payrollTaxRate: 0.0765,
-  unemploymentTaxRate: 0.006,
-  workersCompRate: 0.005,
-  retirement401kRate: 0.06,
-  officeRentPerMonth: 2500,
-  utilitiesPerMonth: 400,
-  internetPhonePerMonth: 300,
-  laptopPerEmployee: 2500,
-  softwareLicensesPerEmployee: 2400,
-  itSupportPerEmployee: 1200,
-  freelanceAnnual: 50000,
-  accountingAnnual: 15000,
-  legalAnnual: 8000,
-  insuranceAnnual: 12000,
-  marketingAnnual: 25000,
-  conferencesTrainingPerEmployee: 5000,
-  travelPerEmployee: 15000,
-  officeSuppliesPerEmployee: 1500,
-  miscellaneousPerEmployee: 2000,
-  inflationRate: 0.03,
-  loanAmount: 0,
-  loanInterestRate: 0.06,
-  loanTermYears: 5,
-}
-
-const MultiSelectDropdown = ({
-  options,
-  selected,
-  onChange,
-  title,
-}: {
-  options: string[]
-  selected: string[]
-  onChange: (selected: string[]) => void
-  title: string
-}) => {
-  const handleSelect = (option: string) => {
-    let newSelected: string[]
-
-    if (option === "all") {
-      newSelected = ["all"]
-    } else {
-      newSelected = selected.includes("all") ? [option] : [...selected, option]
-    }
-
-    onChange(newSelected)
-  }
-
-  const handleDeselect = (option: string) => {
-    let newSelected = selected.filter((item) => item !== option)
-    if (newSelected.length === 0) {
-      newSelected = ["all"]
-    }
-    onChange(newSelected)
-  }
-
-  const getButtonText = () => {
-    if (selected.includes("all") || selected.length === 0) {
-      return `All ${title}`
-    }
-    if (selected.length === 1) {
-      return selected[0]
-    }
-    return `${selected.length} ${title} selected`
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="w-full justify-between text-left font-normal">
-          <span>{getButtonText()}</span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-[150px]" align="start">
-        <DropdownMenuCheckboxItem checked={selected.includes("all")} onSelect={() => onChange(["all"])}>
-          All {title}
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuSeparator />
-        {options
-          .filter((o) => o !== "all")
-          .map((option) => (
-            <DropdownMenuCheckboxItem
-              key={option}
-              checked={selected.includes(option)}
-              onSelect={() => {
-                if (selected.includes(option)) {
-                  handleDeselect(option)
-                } else {
-                  handleSelect(option)
-                }
-              }}
-            >
-              {option}
-            </DropdownMenuCheckboxItem>
-          ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
 }
 
 export default function BusinessPlanDashboard() {
@@ -1187,8 +195,8 @@ export default function BusinessPlanDashboard() {
   const [categories, setCategories] = useState<string[]>(['Strategy', 'Financials', 'Decisions'])
   const [noteCategory, setNoteCategory] = useState('Strategy')
   const [newCategory, setNewCategory] = useState('')
-  // Add a separate filter state for displaying notes
   const [noteFilter, setNoteFilter] = useState('All')
+  const [noteSaved, setNoteSaved] = useState(false)
 
   // Add state for collapsible expense groups
   const [expenseGroupsCollapsed, setExpenseGroupsCollapsed] = useState<{ [key: string]: boolean }>({
@@ -1293,9 +301,13 @@ export default function BusinessPlanDashboard() {
         }
       }
 
+      // Ensure project.name is always a string
+      const projectName = project.name || project.Project_Name || project.detail_Name || "Unknown Project"
+
       return {
         ...project,
-        shortName: project.name.length > 25 ? project.name.substring(0, 25) + "..." : project.name,
+        name: projectName, // Ensure name is always set
+        shortName: projectName.length > 25 ? projectName.substring(0, 25) + "..." : projectName,
         feeFormatted: `$${(project.totalFee / 1000).toFixed(0)}K`,
         projectStatus,
         statusColor,
@@ -1672,10 +684,10 @@ export default function BusinessPlanDashboard() {
 
   const combinedMonthlyData = useMemo(() => {
     const combined = new Map()
-    monthlyRevenueData.forEach((item) => {
+    monthlyRevenueData.forEach((item: { month: string; [key: string]: any }) => {
       combined.set(item.month, { ...item, expense: 0 })
     })
-    monthlyExpensesData.forEach((item) => {
+    monthlyExpensesData.forEach((item: { month: string; [key: string]: any }) => {
       if (combined.has(item.month)) {
         combined.get(item.month).expense = item.expense
       } else {
@@ -1719,14 +731,33 @@ export default function BusinessPlanDashboard() {
       const csvText = e.target?.result as string
       try {
         const parsedData = parseCSV(csvText)
-        setCsvData(parsedData)
-        setIsUsingCsvData(true)
+        console.log('Parsed CSV data:', parsedData)
+        
+        // Check if we got valid data
+        if (parsedData && parsedData.length > 0) {
+          setCsvData(parsedData)
+          setIsUsingCsvData(true)
+          console.log('CSV data loaded successfully:', parsedData.length, 'projects')
+        } else {
+          console.warn('CSV parsing returned empty data, falling back to default')
+          setCsvData([])
+          setIsUsingCsvData(false)
+          alert("CSV file appears to be empty or invalid. Using default data instead.")
+        }
       } catch (error) {
         console.error("Error parsing CSV:", error)
-        alert("Error parsing CSV file. Please check the format.")
+        setCsvData([])
+        setIsUsingCsvData(false)
+        alert("Error parsing CSV file. Using default data instead.")
       }
     }
     reader.readAsText(file)
+  }
+
+  const resetToDefaultData = () => {
+    setCsvData([])
+    setIsUsingCsvData(false)
+    console.log('Reset to default data')
   }
 
   const handleStateClick = (state: string) => {
@@ -2004,33 +1035,53 @@ export default function BusinessPlanDashboard() {
 
   // PDF export handler
   const handleExportCurrentTabPDF = async () => {
-    const input = document.body // Export the visible dashboard/tab
-    const pdf = new jsPDF({ unit: "px", format: "a4" })
-    const canvas = await html2canvas(input, { scale: 2 })
+    const input = document.body // Or a more specific selector for your dashboard
+    const pdf = new jsPDF({ unit: "mm", format: [297, 210] }) // A4 landscape
+    const canvas = await html2canvas(input, { scale: 1.5, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' })
     const imgData = canvas.toDataURL("image/png")
-    const pageWidth = pdf.internal.pageSize.getWidth()
-    const imgProps = pdf.getImageProperties(imgData)
-    const pdfWidth = pageWidth
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight)
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = pdf.internal.pageSize.getHeight()
+    const imgAspectRatio = canvas.width / canvas.height
+    const pdfAspectRatio = pdfWidth / pdfHeight
+    let imgWidth, imgHeight
+    if (imgAspectRatio > pdfAspectRatio) {
+      imgWidth = pdfWidth - 10 // 5mm margin each side
+      imgHeight = imgWidth / imgAspectRatio
+    } else {
+      imgHeight = pdfHeight - 10
+      imgWidth = imgHeight * imgAspectRatio
+    }
+    const x = (pdfWidth - imgWidth) / 2
+    const y = (pdfHeight - imgHeight) / 2
+    pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight)
     pdf.save("dashboard.pdf")
   }
 
   const handleExportAllTabsPDF = async () => {
     const originalTab = mainTab
-    const pdf = new jsPDF({ unit: "px", format: "a4" })
+    const pdf = new jsPDF({ unit: "mm", format: [297, 210] }) // A4 landscape
     for (const tab of allTabs) {
-      setMainTab(tab.key)
-      await new Promise((resolve) => setTimeout(resolve, 800)) // Wait for tab to render
+      setMainTab(tab.key as 'strategy' | 'project-performance' | 'financial' | 'notetaker')
+      await new Promise((resolve) => setTimeout(resolve, 1000)) // Wait for tab to render
       const input = document.body
-      const canvas = await html2canvas(input, { scale: 2 })
+      const canvas = await html2canvas(input, { scale: 1.5, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' })
       const imgData = canvas.toDataURL("image/png")
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const imgProps = pdf.getImageProperties(imgData)
-      const pdfWidth = pageWidth
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      const imgAspectRatio = canvas.width / canvas.height
+      const pdfAspectRatio = pdfWidth / pdfHeight
+      let imgWidth, imgHeight
+      if (imgAspectRatio > pdfAspectRatio) {
+        imgWidth = pdfWidth - 10
+        imgHeight = imgWidth / imgAspectRatio
+      } else {
+        imgHeight = pdfHeight - 10
+        imgWidth = imgHeight * imgAspectRatio
+      }
+      const x = (pdfWidth - imgWidth) / 2
+      const y = (pdfHeight - imgHeight) / 2
       if (tab !== allTabs[0]) pdf.addPage()
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight)
+      pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight)
     }
     setMainTab(originalTab)
     pdf.save("dashboard-all-tabs.pdf")
@@ -2069,6 +1120,21 @@ export default function BusinessPlanDashboard() {
               </Button>
               <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
             </label>
+            
+            {/* Reset to Default Data button */}
+            {isUsingCsvData && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetToDefaultData}
+                className="cursor-pointer bg-orange-100 text-orange-800 hover:bg-orange-200 border-orange-200 h-12 px-4 flex items-center"
+              >
+                <span className="flex items-center h-full">
+                  Reset to Default
+                </span>
+              </Button>
+            )}
+            
             {isAdmin && (
               <Link href="/admin" passHref legacyBehavior>
                 <a className="inline-block px-3 md:px-4 py-2 border rounded bg-red-600 hover:bg-red-700 text-white font-semibold border-red-700 shadow transition whitespace-nowrap h-12 flex items-center justify-center" style={{ minHeight: '3rem' }}>Admin</a>
@@ -3238,9 +2304,11 @@ export default function BusinessPlanDashboard() {
                               position="top"
                               offset={10}
                               content={({ x, y, value }) => (
-                                <text x={x} y={y - 8} textAnchor="middle" fontSize={12} fontWeight={700} fill="#222">
-                                  {value ? `$${(value / 1000).toFixed(0)}K` : ''}
-                                </text>
+                                typeof y === 'number' && typeof value === 'number' ? (
+                                  <text x={x} y={y - 8} textAnchor="middle" fontSize={12} fontWeight={700} fill="#222">
+                                    {`$${(value / 1000).toFixed(0)}K`}
+                                  </text>
+                                ) : null
                               )}
                             />
                           </Bar>
@@ -4220,7 +3288,7 @@ export default function BusinessPlanDashboard() {
         {allowedTabs.includes('notetaker') && (
           <TabsContent value="notetaker">
             <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow border">
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between mb-2">
                 <h2 className="text-xl font-bold">Notetaker</h2>
                 {/* Pie chart for note distribution */}
                 <div className="flex flex-col md:flex-row items-end md:items-start min-w-[180px] md:min-w-[260px] gap-2 md:gap-4">
@@ -4236,6 +3304,8 @@ export default function BusinessPlanDashboard() {
                   if (noteText.trim() && noteCategory !== 'All') {
                     setNotes([{ text: noteText, category: noteCategory, timestamp: Date.now() }, ...notes])
                     setNoteText('')
+                    setNoteSaved(true)
+                    setTimeout(() => setNoteSaved(false), 1500)
                   }
                   if (noteCategory === 'Other' && newCategory.trim()) {
                     if (!categories.includes(newCategory.trim())) {
@@ -4246,40 +3316,51 @@ export default function BusinessPlanDashboard() {
                     }
                   }
                 }}
-                className="flex flex-col gap-2 md:flex-row md:gap-2 mb-6 w-full"
+                className="flex flex-col gap-2 mb-6 w-full"
               >
-                <input
-                  type="text"
-                  value={noteText}
-                  onChange={e => setNoteText(e.target.value)}
-                  placeholder="Type your note..."
-                  className="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-                <select
-                  value={noteCategory}
-                  onChange={e => {
-                    setNoteCategory(e.target.value)
-                    if (e.target.value !== 'Other') setNewCategory('')
-                  }}
-                  className="px-2 py-2 border rounded"
-                >
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                  <option value="Other">Other</option>
-                </select>
-                {noteCategory === 'Other' && (
-                  <input
-                    type="text"
-                    value={newCategory}
-                    onChange={e => setNewCategory(e.target.value)}
-                    placeholder="New category name"
+                <div className="flex flex-row gap-2 items-end mb-2">
+                  <select
+                    value={noteCategory}
+                    onChange={e => {
+                      setNoteCategory(e.target.value)
+                      if (e.target.value !== 'Other') setNewCategory('')
+                    }}
                     className="px-2 py-2 border rounded"
-                    required
+                  >
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                    <option value="Other">Other</option>
+                  </select>
+                  {noteCategory === 'Other' && (
+                    <input
+                      type="text"
+                      value={newCategory}
+                      onChange={e => setNewCategory(e.target.value)}
+                      placeholder="New category name"
+                      className="px-2 py-2 border rounded"
+                      required
+                    />
+                  )}
+                  <Button type="submit" className="px-4 py-2 text-base">Add Note</Button>
+                  {noteSaved && <div className="text-green-600 text-xs ml-2">Note saved!</div>}
+                </div>
+                {/* Removed the Note (Markdown supported): label */}
+                <div data-color-mode="light">
+                  <MDEditor
+                    value={noteText}
+                    onChange={v => setNoteText(v || '')}
+                    height={120}
+                    preview="edit"
+                    previewOptions={{
+                      components: {
+                        code({className, children, ...props}) {
+                          return <code className={className} {...props}>{children}</code>
+                        }
+                      }
+                    }}
                   />
-                )}
-                <Button type="submit" className="px-4 py-2 text-base w-full md:w-auto">Add Note</Button>
+                </div>
               </form>
               {/* Notetaker filter bar */}
               <div className="flex gap-2 mb-4 overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
@@ -4316,7 +3397,6 @@ export default function BusinessPlanDashboard() {
                                 return updated
                               })
                               setNotes(prev => prev.filter(n => n.category !== cat))
-                              // If the current noteCategory is being deleted, reset to first available
                               if (noteCategory === cat && categories.length > 1) {
                                 setNoteCategory(categories.find(c => c !== cat) || '')
                               }
@@ -4336,7 +3416,9 @@ export default function BusinessPlanDashboard() {
                       )}
                       {notes.filter(n => n.category === cat).map((note, idx) => (
                         <li key={note.timestamp + '-' + idx} className="text-sm flex flex-col group relative">
-                          <span>{note.text}</span>
+                          <div className="prose prose-sm max-w-none">
+                            <ReactMarkdown>{note.text}</ReactMarkdown>
+                          </div>
                           <span className="text-xs text-gray-400 mt-1">{new Date(note.timestamp).toLocaleString()}</span>
                           <button
                             className="absolute top-1 right-1 text-xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity underline"
@@ -4360,3 +3442,4 @@ export default function BusinessPlanDashboard() {
     </div>
   )
 }
+
