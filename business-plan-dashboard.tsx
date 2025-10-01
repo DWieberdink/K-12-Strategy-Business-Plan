@@ -168,21 +168,21 @@ export default function BusinessPlanDashboard() {
   // Manual revenue input state
   const [useManualRevenue, setUseManualRevenue] = useState(true)
   const [manualRevenue, setManualRevenue] = useState<{ [year: number]: number }>({
-    2026: 200000,
-    2027: 500000,
-    2028: Math.round(500000 * 1.25),
-    2029: Math.round(500000 * 1.25 * 1.25),
-    2030: Math.round(500000 * 1.25 * 1.25 * 1.25),
-    2031: Math.round(500000 * 1.25 * 1.25 * 1.25 * 1.25),
+    2026: 460000,
+    2027: 950000,
+    2028: 2270000,
+    2029: 4420000,
+    2030: Math.round(4420000 * 1.25), // 5,525,000
+    2031: Math.round(4420000 * 1.25 * 1.25), // 6,906,250
   })
   const [manualRevenueGrowthRate, setManualRevenueGrowthRate] = useState(0.25)
-  const [manualRevenueGrowthStartYear, setManualRevenueGrowthStartYear] = useState(2026)
+  const [manualRevenueGrowthStartYear, setManualRevenueGrowthStartYear] = useState(2030)
   const [useQuarterlyBreakdown, setUseQuarterlyBreakdown] = useState(false)
   const [quarterlyRevenue2026, setQuarterlyRevenue2026] = useState({
-    Q1: 375000, // 25% of 1.5M
-    Q2: 375000, // 25% of 1.5M
-    Q3: 375000, // 25% of 1.5M
-    Q4: 375000, // 25% of 1.5M
+    Q1: 0,
+    Q2: 100000,
+    Q3: 150000,
+    Q4: 210000,
   })
 
   // Add state for collapsible expense groups
@@ -276,7 +276,7 @@ export default function BusinessPlanDashboard() {
         ...project,
         name: projectName, // Ensure name is always set
         shortName: projectName.length > 25 ? projectName.substring(0, 25) + "..." : projectName,
-        feeFormatted: `$${(project.totalFee / 1000).toFixed(0)}K`,
+        feeFormatted: `$${(project.totalFee / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`,
         projectStatus,
         statusColor,
         hasStarted: startDate <= today,
@@ -1132,26 +1132,113 @@ export default function BusinessPlanDashboard() {
           </div>
         </TabsList>
         {allowedTabs.includes('business-plan') && (
-        <TabsContent value="business-plan" className="flex-1">
-          <div className="max-w-5xl mx-auto space-y-6">
-            <div className="bg-white rounded-lg border border-border p-6">
-              <h2 className="text-xl font-semibold mb-3">Business Plan Overview</h2>
-              <p className="text-sm text-muted-foreground mb-4">
-                Welcome to the K-12 Strategy Business Plan Dashboard. This comprehensive tool provides insights into our strategic direction, 
-                financial projections, and market performance.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-                <div className="p-3 bg-secondary/50 rounded border border-border">
-                  <h3 className="font-medium text-sm mb-1">Project Performance</h3>
-                  <p className="text-xs text-muted-foreground">Track and analyze project data across states and practice areas</p>
+        <TabsContent value="business-plan" className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col space-y-4">
+            
+            {/* Business Plan Content */}
+            <div className="flex-1 bg-white rounded-lg border border-border overflow-hidden" style={{ minHeight: '600px' }}>
+              <div className="h-full flex flex-col">
+                {/* Document Header */}
+                <div className="bg-gray-50 border-b border-border px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">Business Plan Document</h3>
+                      <p className="text-sm text-muted-foreground">K-12 Strategy Business Plan</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {isAdmin && (
+                      <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">
+                        Edit Mode
+                      </span>
+                    )}
+                    <a
+                      href="https://1drv.ms/w/c/e25b0f41ee1d8f0f/EW1ysidp4bBNpRwEIMkE-uQBL0_xHXluhSM2hKa4rHnhTA?e=3RY3H3"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+                    >
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                      Open in Word
+                    </a>
+                  </div>
                 </div>
-                <div className="p-3 bg-secondary/50 rounded border border-border">
-                  <h3 className="font-medium text-sm mb-1">Financial Projections</h3>
-                  <p className="text-xs text-muted-foreground">View expenses, revenue, and cash flow projections for 2026-2031</p>
-                </div>
-                <div className="p-3 bg-secondary/50 rounded border border-border">
-                  <h3 className="font-medium text-sm mb-1">Go To Market</h3>
-                  <p className="text-xs text-muted-foreground">Strategic analysis and business model comparison</p>
+                
+                {/* Document Preview */}
+                <div className="flex-1 p-6 overflow-y-auto">
+                  <div className="max-w-4xl mx-auto">
+                    <div className="prose prose-sm max-w-none">
+                      <h1 className="text-2xl font-bold text-foreground mb-6">K-12 Strategy Business Plan</h1>
+                      
+                      <div className="space-y-6">
+                        <section>
+                          <h2 className="text-xl font-semibold text-foreground mb-3">Executive Summary</h2>
+                          <p className="text-muted-foreground leading-relaxed">
+                            This business plan outlines our strategy for expanding into the K-12 education sector, 
+                            leveraging our expertise in public sector facilities consulting to address the growing 
+                            infrastructure needs of school districts nationwide.
+                          </p>
+                        </section>
+                        
+                        <section>
+                          <h2 className="text-xl font-semibold text-foreground mb-3">Market Opportunity</h2>
+                          <p className="text-muted-foreground leading-relaxed">
+                            The K-12 education market presents significant opportunities for growth, with school 
+                            districts across the country facing aging infrastructure, capacity constraints, and 
+                            evolving educational requirements that demand strategic facility planning and development.
+                          </p>
+                        </section>
+                        
+                        <section>
+                          <h2 className="text-xl font-semibold text-foreground mb-3">Strategic Approach</h2>
+                          <p className="text-muted-foreground leading-relaxed">
+                            Our approach focuses on building long-term partnerships with school districts, 
+                            providing comprehensive facility assessments, master planning, and project management 
+                            services tailored to the unique needs of educational environments.
+                          </p>
+                        </section>
+                        
+                        <section>
+                          <h2 className="text-xl font-semibold text-foreground mb-3">Financial Projections</h2>
+                          <p className="text-muted-foreground leading-relaxed">
+                            Based on our current pipeline and market analysis, we project significant revenue 
+                            growth over the next 3-5 years, with the K-12 sector becoming a major contributor 
+                            to our overall business portfolio.
+                          </p>
+                        </section>
+                      </div>
+                      
+                      <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-start space-x-3">
+                          <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div>
+                            <p className="text-sm text-blue-800 font-medium mb-1">Full Document Available</p>
+                            <p className="text-sm text-blue-700">
+                              This is a preview of the business plan. For the complete document with detailed 
+                              financial models, market analysis, and strategic recommendations, 
+                              <a 
+                                href="https://1drv.ms/w/c/e25b0f41ee1d8f0f/EW1ysidp4bBNpRwEIMkE-uQBL0_xHXluhSM2hKa4rHnhTA?e=3RY3H3" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="underline hover:text-blue-900 ml-1"
+                              >
+                                open the full document in Microsoft Word
+                              </a>.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1383,7 +1470,7 @@ export default function BusinessPlanDashboard() {
               </CardHeader>
                     <CardContent className="px-3 pb-3">
                 <div className="text-xl font-semibold text-green-600">
-                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / 1000000).toFixed(0)}M
+                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / 1000000).toLocaleString(undefined, { maximumFractionDigits: 0 })}M
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Combined project value ({processedData.filter(p => p.totalFee > 0).length} with fees)
@@ -1392,23 +1479,23 @@ export default function BusinessPlanDashboard() {
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex items-center justify-between">
                           <span className="text-blue-700">Active:</span>
-                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-orange-700">Awaiting:</span>
-                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-700">Unspecified:</span>
-                          <span className="">${processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="">${processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-green-700">Completed:</span>
-                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  Raw total: ${processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}
+                  Raw total: ${processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </div>
               </CardContent>
             </Card>
@@ -1419,26 +1506,26 @@ export default function BusinessPlanDashboard() {
               </CardHeader>
                     <CardContent className="px-3 pb-3">
                 <div className="text-xl font-semibold text-blue-600">
-                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.totalFee > 0).length || 1) / 1000).toFixed(0)}K
+                  ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.totalFee > 0).length || 1) / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K
                 </div>
                 <p className="text-xs text-muted-foreground">Mean contract value (excluding $0 fees)</p>
                       {/* Sub-averages for Active, Awaiting, Unspecified, Completed */}
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex items-center justify-between">
                           <span className="text-blue-700">Active:</span>
-                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('active') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('active') && p.totalFee > 0).length || 1) / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-orange-700">Awaiting:</span>
-                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('await') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('await') && p.totalFee > 0).length || 1) / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-700">Unspecified:</span>
-                          <span className="">${(processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="">${(processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.totalFee > 0).length || 1) / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-green-700">Completed:</span>
-                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.totalFee > 0).length || 1) / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</span>
                         </div>
                       </div>
               </CardContent>
@@ -1542,9 +1629,9 @@ export default function BusinessPlanDashboard() {
                                     </div>
                                   </div>
                                   <div className="text-right">
-                                    <div className="font-bold">${(stateData.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="font-bold">${(stateData.totalValue / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</div>
                                     <div className="text-sm text-muted-foreground">
-                                      ${(stateData.totalValue / stateData.count / 1000).toFixed(0)}K avg
+                                      ${(stateData.totalValue / stateData.count / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K avg
                                     </div>
                                   </div>
                                 </div>
@@ -1568,9 +1655,9 @@ export default function BusinessPlanDashboard() {
                                     </div>
                                   </div>
                                   <div className="text-right">
-                                    <div className="font-bold">${(areaData.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="font-bold">${(areaData.totalValue / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</div>
                                     <div className="text-sm text-muted-foreground">
-                                      ${(areaData.totalValue / areaData.count / 1000).toFixed(0)}K avg
+                                      ${(areaData.totalValue / areaData.count / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K avg
                                     </div>
                                   </div>
                                 </div>
@@ -1594,9 +1681,9 @@ export default function BusinessPlanDashboard() {
                                     </div>
                                   </div>
                                   <div className="text-right">
-                                    <div className="font-bold">${(statusItem.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="font-bold">${(statusItem.totalValue / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</div>
                                     <div className="text-sm text-muted-foreground">
-                                      ${(statusItem.totalValue / statusItem.count / 1000).toFixed(0)}K avg
+                                      ${(statusItem.totalValue / statusItem.count / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K avg
                                     </div>
                                   </div>
                                 </div>
@@ -1622,9 +1709,9 @@ export default function BusinessPlanDashboard() {
                                     </div>
                                   </div>
                                   <div className="text-right">
-                                    <div className="font-bold">${(studioItem.totalValue / 1000).toFixed(0)}K</div>
+                                    <div className="font-bold">${(studioItem.totalValue / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K</div>
                                     <div className="text-sm text-muted-foreground">
-                                      ${(studioItem.totalValue / studioItem.count / 1000).toFixed(0)}K avg
+                                      ${(studioItem.totalValue / studioItem.count / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K avg
                                     </div>
                                   </div>
                                 </div>
@@ -1713,7 +1800,7 @@ export default function BusinessPlanDashboard() {
                           <BarChart data={processedData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="shortName" angle={-45} textAnchor="end" height={120} fontSize={12} />
-                            <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
+                            <YAxis tickFormatter={(value) => `$${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`} fontSize={12} />
                             <ChartTooltip
                               content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
@@ -1784,7 +1871,7 @@ export default function BusinessPlanDashboard() {
                           <LineChart data={combinedMonthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="month" fontSize={12} angle={-45} textAnchor="end" height={80} />
-                            <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} fontSize={12} />
+                            <YAxis tickFormatter={(value) => `$${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`} fontSize={12} />
                             <ChartTooltip
                               content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
@@ -2560,6 +2647,9 @@ export default function BusinessPlanDashboard() {
                       {projectionYears.map((year) => (
                         <div key={year} className="space-y-2">
                           <label className="text-sm font-medium">{year}</label>
+                          <div className="text-xs text-blue-600 font-medium">
+                            ${(manualRevenue[year] || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </div>
                           <input
                             type="number"
                             value={manualRevenue[year] || 0}
@@ -2570,9 +2660,6 @@ export default function BusinessPlanDashboard() {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="0"
                           />
-                          <div className="text-xs text-gray-500">
-                            ${((manualRevenue[year] || 0) / 1000000).toFixed(0)}M
-                          </div>
                         </div>
                       ))}
                     </div>
@@ -2595,6 +2682,9 @@ export default function BusinessPlanDashboard() {
                             {['Q1', 'Q2', 'Q3', 'Q4'].map((quarter) => (
                               <div key={quarter} className="space-y-2">
                                 <label className="text-sm font-medium">{quarter} 2026</label>
+                                <div className="text-xs text-blue-600 font-medium">
+                                  ${(quarterlyRevenue2026[quarter as keyof typeof quarterlyRevenue2026] || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </div>
                                 <input
                                   type="number"
                                   value={quarterlyRevenue2026[quarter as keyof typeof quarterlyRevenue2026] || 0}
@@ -2605,9 +2695,6 @@ export default function BusinessPlanDashboard() {
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                   placeholder="0"
                                 />
-                                <div className="text-xs text-gray-500">
-                                  ${(quarterlyRevenue2026[quarter as keyof typeof quarterlyRevenue2026] || 0) / 1000000}M
-                                </div>
                               </div>
                             ))}
                           </div>
@@ -3029,7 +3116,7 @@ export default function BusinessPlanDashboard() {
                       <div>
                         <div className="font-semibold">2023 Starting Value</div>
                         <div className="text-xl font-semibold text-primary">
-                          ${(growthTrendData[0]?.cumulativeValue / 1000).toFixed(0)}K
+                          ${(growthTrendData[0]?.cumulativeValue / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K
                         </div>
                       </div>
                       <div>
@@ -3041,7 +3128,7 @@ export default function BusinessPlanDashboard() {
                             growthTrendData[growthTrendData.findIndex((d) => d.isProjected) - 1]?.cumulativeValue /
                               1000000 ||
                             0
-                          ).toFixed(1)}
+                          ).toLocaleString(undefined, { maximumFractionDigits: 1 })}
                           M
                         </div>
                       </div>
@@ -3063,7 +3150,7 @@ export default function BusinessPlanDashboard() {
                       <div>
                         <div className="font-semibold">2030 Projection</div>
                         <div className="text-xl font-semibold text-purple-600">
-                          ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toFixed(1)}M
+                          ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}M
                         </div>
                       </div>
                     </div>
