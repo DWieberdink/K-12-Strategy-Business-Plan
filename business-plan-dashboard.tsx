@@ -44,10 +44,6 @@ import { handleExportCurrentTabPDF, handleExportAllTabsPDF } from "@/lib/pdf-exp
 import { handleFileUpload, getQuarterStatus, filterProjects } from "@/lib/project-management"
 import { StateMap } from "@/components/state-map"
 import { MultiSelectDropdown } from "@/components/ui/multi-select-dropdown"
-import dynamic from "next/dynamic"
-import ReactMarkdown from "react-markdown"
-// Dynamically import the markdown editor to avoid SSR issues
-const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false })
 
 // Set Mapbox access token
 // d3.select("svg").attr("width", "100%").attr("height", "100%")
@@ -109,10 +105,10 @@ const stateCoordinates: { [key: string]: { lat: number; lng: number; name: strin
 export default function BusinessPlanDashboard() {
   // Tab access control (must be first in function)
   const allTabs = [
-    { key: 'strategy', label: 'Company Strategy' },
+    { key: 'business-plan', label: 'Business Plan' },
     { key: 'project-performance', label: 'Project Performance' },
     { key: 'financial', label: 'Financial Projections' },
-    { key: 'notetaker', label: 'Notetaker' },
+    { key: 'strategy', label: 'Go To Market' },
   ]
   const ADMIN_PASSWORD = '12'
   const [allowedTabs, setAllowedTabs] = useState<string[]>([])
@@ -128,7 +124,7 @@ export default function BusinessPlanDashboard() {
   // Add state for summary section collapse (must be before any early returns)
   const [summaryOpen, setSummaryOpen] = useState(true)
 
-  const [mainTab, setMainTab] = useState<'financial' | 'strategy' | 'project-performance' | 'notetaker'>('strategy')
+  const [mainTab, setMainTab] = useState<'business-plan' | 'financial' | 'strategy' | 'project-performance'>('business-plan')
   const [viewType, setViewType] = useState<'charts' | 'expenses' | 'revenue' | 'cashflow' | 'overview'>('expenses')
   const [strategyTab, setStrategyTab] = useState<'case' | 'proscons'>('case')
   const [selectedYear, setSelectedYear] = useState(2026)
@@ -151,7 +147,7 @@ export default function BusinessPlanDashboard() {
   const [filterState, setFilterState] = useState<string[]>(["all"])
   const [filterPracticeArea, setFilterPracticeArea] = useState<string[]>(["all"])
   const [filterStatus, setFilterStatus] = useState<string[]>(["all"])
-  const [chartViewType, setChartViewType] = useState<"projects" | "monthly" | "quarterly" | "growth" | "map">("projects")
+  const [chartViewType, setChartViewType] = useState<"projects" | "monthly" | "quarterly" | "map">("projects")
 
   // Add state for CAGR
   const [cagr, setCagr] = useState(0.20)
@@ -189,15 +185,6 @@ export default function BusinessPlanDashboard() {
     Q4: 375000, // 25% of 1.5M
   })
 
-  // Notetaker state
-  const [notes, setNotes] = useState<{ text: string; category: string; timestamp: number }[]>([])
-  const [noteText, setNoteText] = useState('')
-  const [categories, setCategories] = useState<string[]>(['Strategy', 'Financials', 'Decisions'])
-  const [noteCategory, setNoteCategory] = useState('Strategy')
-  const [newCategory, setNewCategory] = useState('')
-  const [noteFilter, setNoteFilter] = useState('All')
-  const [noteSaved, setNoteSaved] = useState(false)
-
   // Add state for collapsible expense groups
   const [expenseGroupsCollapsed, setExpenseGroupsCollapsed] = useState<{ [key: string]: boolean }>({
     personnel: true,
@@ -208,25 +195,6 @@ export default function BusinessPlanDashboard() {
     financing: true,
     other: true,
   })
-
-  // Persist notes in localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem('dashboardNotes')
-    if (stored) {
-      try {
-        setNotes(JSON.parse(stored))
-      } catch {}
-    }
-    const storedCategories = localStorage.getItem('dashboardNoteCategories')
-    if (storedCategories) {
-      try {
-        setCategories(JSON.parse(storedCategories))
-      } catch {}
-    }
-  }, [])
-  useEffect(() => {
-    localStorage.setItem('dashboardNotes', JSON.stringify(notes))
-  }, [notes])
 
   const projectData = useMemo(() => {
     if (isUsingCsvData && csvData.length > 0) {
@@ -841,7 +809,7 @@ export default function BusinessPlanDashboard() {
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Business Plan Dashboard</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Business Plan Dashboard</h2>
             <p className="text-gray-600">Please enter the password to access the dashboard</p>
           </div>
           
@@ -867,7 +835,7 @@ export default function BusinessPlanDashboard() {
             
             <button
               type="submit"
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+              className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors shadow-sm"
             >
               Access Dashboard
             </button>
@@ -958,7 +926,7 @@ export default function BusinessPlanDashboard() {
   const personnelHeader = (
     <button
       type="button"
-      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
       onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, personnel: !prev.personnel }))}
     >
       <span>Personnel Costs</span>
@@ -969,7 +937,7 @@ export default function BusinessPlanDashboard() {
   const officeHeader = (
     <button
       type="button"
-      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
       onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, office: !prev.office }))}
     >
       <span>Office & Facilities</span>
@@ -980,7 +948,7 @@ export default function BusinessPlanDashboard() {
   const techHeader = (
     <button
       type="button"
-      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
       onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, technology: !prev.technology }))}
     >
       <span>Technology</span>
@@ -991,7 +959,7 @@ export default function BusinessPlanDashboard() {
   const profHeader = (
     <button
       type="button"
-      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
       onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, professional: !prev.professional }))}
     >
       <span>Professional Services</span>
@@ -1002,7 +970,7 @@ export default function BusinessPlanDashboard() {
   const bizHeader = (
     <button
       type="button"
-      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
       onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, business: !prev.business }))}
     >
       <span>Business Development</span>
@@ -1013,7 +981,7 @@ export default function BusinessPlanDashboard() {
   const financeHeader = (
     <button
       type="button"
-      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
       onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, financing: !prev.financing }))}
     >
       <span>Financing</span>
@@ -1024,7 +992,7 @@ export default function BusinessPlanDashboard() {
   const otherHeader = (
     <button
       type="button"
-      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+      className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
       onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, other: !prev.other }))}
     >
       <span>Other</span>
@@ -1061,7 +1029,7 @@ export default function BusinessPlanDashboard() {
     const originalTab = mainTab
     const pdf = new jsPDF({ unit: "mm", format: [297, 210] }) // A4 landscape
     for (const tab of allTabs) {
-      setMainTab(tab.key as 'strategy' | 'project-performance' | 'financial' | 'notetaker')
+      setMainTab(tab.key as 'business-plan' | 'strategy' | 'project-performance' | 'financial')
       await new Promise((resolve) => setTimeout(resolve, 1000)) // Wait for tab to render
       const input = document.body
       const canvas = await html2canvas(input, { scale: 1.5, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' })
@@ -1088,34 +1056,34 @@ export default function BusinessPlanDashboard() {
   }
 
   return (
-    <div className="w-full h-full space-y-4 px-2 md:px-6 pb-24 md:pb-8">
-      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as 'financial' | 'strategy' | 'project-performance' | 'notetaker')} className="h-full flex flex-col">
-        <TabsList className="flex w-full mb-4 gap-2 items-center flex-wrap overflow-visible bg-white/90 border border-gray-200 shadow-sm rounded-lg h-14 min-h-[56px] px-2">
+    <div className="w-full h-full space-y-6 px-4 md:px-8 pb-24 md:pb-8">
+      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as 'business-plan' | 'financial' | 'strategy' | 'project-performance')} className="h-full flex flex-col">
+        <TabsList className="flex w-full mb-6 gap-1 items-center flex-wrap overflow-visible bg-white border-b border-gray-200 h-14 min-h-[56px] px-0 rounded-none">
           {/* Tab triggers */}
           {allTabs.filter(tab => allowedTabs.includes(tab.key)).map(tab => (
             <TabsTrigger
               key={tab.key}
               value={tab.key}
-              className={`min-w-[120px] md:min-w-[160px] text-sm md:text-base px-4 py-3 rounded-lg transition-colors duration-150 font-semibold h-12 flex items-center justify-center
-                data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md
-                data-[state=inactive]:bg-white data-[state=inactive]:text-gray-700 hover:bg-blue-50 hover:text-blue-700
+              className={`min-w-[120px] md:min-w-[160px] text-sm md:text-base px-6 py-3 rounded-none transition-all duration-200 font-medium h-12 flex items-center justify-center border-b-2 border-transparent
+                data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
+                data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent
               `}
             >
               {tab.label}
             </TabsTrigger>
           ))}
-          <div className="ml-auto flex items-center gap-2 h-full">
-            {/* Upload CSV button (light green, same height as Admin) */}
+          <div className="ml-auto flex items-center gap-1 h-full">
+            {/* Upload CSV button */}
             <label htmlFor="csv-upload" className="h-full flex items-center">
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="cursor-pointer bg-green-100 text-green-800 hover:bg-green-200 border-green-200 h-12 px-4 flex items-center"
+                className="cursor-pointer text-muted-foreground hover:text-foreground hover:bg-transparent h-12 px-3 flex items-center font-medium"
                 asChild
               >
-                <span className="flex items-center h-full">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload CSV
+                <span className="flex items-center h-full gap-1.5">
+                  <Upload className="w-4 h-4" />
+                  <span className="text-sm">Upload CSV</span>
                 </span>
               </Button>
               <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
@@ -1124,31 +1092,31 @@ export default function BusinessPlanDashboard() {
             {/* Reset to Default Data button */}
             {isUsingCsvData && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={resetToDefaultData}
-                className="cursor-pointer bg-orange-100 text-orange-800 hover:bg-orange-200 border-orange-200 h-12 px-4 flex items-center"
+                className="cursor-pointer text-muted-foreground hover:text-foreground hover:bg-transparent h-12 px-3 flex items-center font-medium"
               >
-                <span className="flex items-center h-full">
-                  Reset to Default
+                <span className="flex items-center h-full text-sm">
+                  Reset
                 </span>
               </Button>
             )}
             
             {isAdmin && (
               <Link href="/admin" passHref legacyBehavior>
-                <a className="inline-block px-3 md:px-4 py-2 border rounded bg-red-600 hover:bg-red-700 text-white font-semibold border-red-700 shadow transition whitespace-nowrap h-12 flex items-center justify-center" style={{ minHeight: '3rem' }}>Admin</a>
+                <a className="inline-flex items-center px-3 h-12 text-sm font-medium text-muted-foreground hover:text-foreground transition">Admin</a>
             </Link>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="cursor-pointer bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-200 h-12 px-4 flex items-center"
+                  className="cursor-pointer text-muted-foreground hover:text-foreground hover:bg-transparent h-12 px-3 flex items-center font-medium"
                 >
-                  <span className="flex items-center h-full">
-                    Export to PDF
+                  <span className="flex items-center h-full text-sm">
+                    Export PDF
                   </span>
                 </Button>
               </DropdownMenuTrigger>
@@ -1163,33 +1131,60 @@ export default function BusinessPlanDashboard() {
             </DropdownMenu>
           </div>
         </TabsList>
+        {allowedTabs.includes('business-plan') && (
+        <TabsContent value="business-plan" className="flex-1">
+          <div className="max-w-5xl mx-auto space-y-6">
+            <div className="bg-white rounded-lg border border-border p-6">
+              <h2 className="text-xl font-semibold mb-3">Business Plan Overview</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Welcome to the K-12 Strategy Business Plan Dashboard. This comprehensive tool provides insights into our strategic direction, 
+                financial projections, and market performance.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                <div className="p-3 bg-secondary/50 rounded border border-border">
+                  <h3 className="font-medium text-sm mb-1">Project Performance</h3>
+                  <p className="text-xs text-muted-foreground">Track and analyze project data across states and practice areas</p>
+                </div>
+                <div className="p-3 bg-secondary/50 rounded border border-border">
+                  <h3 className="font-medium text-sm mb-1">Financial Projections</h3>
+                  <p className="text-xs text-muted-foreground">View expenses, revenue, and cash flow projections for 2026-2031</p>
+                </div>
+                <div className="p-3 bg-secondary/50 rounded border border-border">
+                  <h3 className="font-medium text-sm mb-1">Go To Market</h3>
+                  <p className="text-xs text-muted-foreground">Strategic analysis and business model comparison</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+        )}
         {allowedTabs.includes('strategy') && (
         <TabsContent value="strategy">
           <Tabs value={strategyTab} onValueChange={(value) => setStrategyTab(value as 'case' | 'proscons')} className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-2 bg-white/90 border border-gray-200 shadow-sm rounded-lg h-14 min-h-[56px] px-2 mb-4">
+              <TabsList className="grid w-full grid-cols-2 bg-white border-b border-border h-14 min-h-[56px] px-0 mb-6 rounded-none">
               <TabsTrigger
                 value="case"
-                className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
-                  data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                className="px-4 py-3 rounded-none font-medium h-12 flex items-center justify-center transition-all duration-200 border-b-2 border-transparent
+                  data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
+                  data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent"
               >
                 A Case for...
               </TabsTrigger>
               <TabsTrigger
                 value="proscons"
-                className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
-                  data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
-                  data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                className="px-4 py-3 rounded-none font-medium h-12 flex items-center justify-center transition-all duration-200 border-b-2 border-transparent
+                  data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
+                  data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent"
               >
                 Business Model Comparison
               </TabsTrigger>
             </TabsList>
             <TabsContent value="case">
-              <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Pros: ...Becoming Independent? */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...Becoming Independent?</h3>
+                  <div className="bg-white rounded-lg border border-border p-4">
+                    <h3 className="text-base font-semibold mb-3 text-center border-b pb-2">...Becoming Independent</h3>
                     <div className="mb-2 font-semibold text-green-700">Pros:</div>
                     <div className="space-y-4 mb-4">
                       <div>
@@ -1241,8 +1236,8 @@ export default function BusinessPlanDashboard() {
                     </div>
                   </div>
                   {/* Cons: ...not Becoming Independent */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">...not Becoming Independent</h3>
+                  <div className="bg-white rounded-lg border border-border p-4">
+                    <h3 className="text-base font-semibold mb-3 text-center border-b pb-2">...not Becoming Independent</h3>
                     <div className="mb-2 font-semibold text-red-700">Cons:</div>
                     <div className="space-y-4">
                       <div>
@@ -1294,11 +1289,11 @@ export default function BusinessPlanDashboard() {
               </div>
             </TabsContent>
             <TabsContent value="proscons">
-              <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Affiliate Model */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Affiliate Model</h3>
+                  <div className="bg-white rounded-lg border border-border p-4">
+                    <h3 className="text-base font-semibold mb-3 text-center border-b pb-2">Affiliate Model</h3>
                     <div className="mb-2 font-semibold text-green-700">Pros:</div>
                     <ul className="list-disc list-inside mb-4 text-sm space-y-1">
                       <li>Shared overhead expenses (HR, IT, Accounting)</li>
@@ -1313,8 +1308,8 @@ export default function BusinessPlanDashboard() {
                     </ul>
                   </div>
                   {/* Independent Model */}
-                  <div className="bg-white rounded-lg shadow p-6 border">
-                    <h3 className="text-lg font-bold mb-4 text-center border-b pb-2">Independent Model</h3>
+                  <div className="bg-white rounded-lg border border-border p-4">
+                    <h3 className="text-base font-semibold mb-3 text-center border-b pb-2">Independent Model</h3>
                     <div className="mb-2 font-semibold text-green-700">Pros:</div>
                     <ul className="list-disc list-inside mb-4 text-sm space-y-1">
                       <li>Full control over business operations and strategy</li>
@@ -1339,7 +1334,7 @@ export default function BusinessPlanDashboard() {
           <div className="flex-1 overflow-auto space-y-4">
                 <div className="mb-2 flex items-center gap-2">
                   <button
-                    className="px-3 py-2 rounded bg-blue-100 text-blue-800 font-semibold hover:bg-blue-200 transition"
+                    className="px-3 py-1.5 text-sm rounded bg-white text-foreground font-medium hover:bg-secondary transition border border-border"
                     onClick={() => setSummaryOpen(o => !o)}
                     aria-expanded={summaryOpen}
                     aria-controls="summary-cards"
@@ -1349,45 +1344,45 @@ export default function BusinessPlanDashboard() {
                 </div>
                 <div
                   id="summary-cards"
-                  className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 transition-all duration-300 overflow-hidden ${summaryOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}
+                  className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 transition-all duration-300 overflow-hidden ${summaryOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}
                   style={{ transitionProperty: 'max-height, opacity' }}
                 >
                   {/* Total Projects Card */}
-                  <Card className="w-full">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
-                      <CardTitle className="text-sm md:text-base font-medium">Total Projects</CardTitle>
+                  <Card className="w-full border-border">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 pt-3">
+                      <CardTitle className="text-sm font-medium text-foreground">Total Projects</CardTitle>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
-                <div className="text-2xl font-bold text-primary">{processedData.length}</div>
+                    <CardContent className="px-3 pb-3">
+                <div className="text-xl font-semibold text-primary">{processedData.length}</div>
                 <p className="text-xs text-muted-foreground">Active projects in pipeline</p>
                       {/* Sub-counts for Active, Awaiting, Unspecified, Completed */}
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-blue-700">Active:</span>
-                          <span className="font-mono">{processedData.filter(p => p.status?.toLowerCase().includes('active')).length}</span>
+                          <span className="text-blue-700">Active:</span>
+                          <span>{processedData.filter(p => p.status?.toLowerCase().includes('active')).length}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-orange-700">Awaiting:</span>
-                          <span className="font-mono">{processedData.filter(p => p.status?.toLowerCase().includes('await')).length}</span>
+                          <span className="text-orange-700">Awaiting:</span>
+                          <span>{processedData.filter(p => p.status?.toLowerCase().includes('await')).length}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-gray-700">Unspecified:</span>
-                          <span className="font-mono">{processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).length}</span>
+                          <span className="text-gray-700">Unspecified:</span>
+                          <span>{processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).length}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-green-700">Completed:</span>
-                          <span className="font-mono">{processedData.filter(p => p.status?.toLowerCase().includes('completed')).length}</span>
+                          <span className="text-green-700">Completed:</span>
+                          <span>{processedData.filter(p => p.status?.toLowerCase().includes('completed')).length}</span>
                         </div>
                       </div>
               </CardContent>
             </Card>
                   {/* Total Contract Value Card */}
                   <Card className="w-full">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
-                      <CardTitle className="text-sm md:text-base font-medium">Total Contract Value</CardTitle>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 pt-3">
+                      <CardTitle className="text-sm font-medium text-foreground">Total Contract Value</CardTitle>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
-                <div className="text-2xl font-bold text-green-600">
+                    <CardContent className="px-3 pb-3">
+                <div className="text-xl font-semibold text-green-600">
                   ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / 1000000).toFixed(0)}M
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -1396,20 +1391,20 @@ export default function BusinessPlanDashboard() {
                       {/* Sub-data for Active, Awaiting, Unspecified, Completed */}
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-blue-700">Active:</span>
-                          <span className="font-mono">${processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="text-blue-700">Active:</span>
+                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-orange-700">Awaiting:</span>
-                          <span className="font-mono">${processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="text-orange-700">Awaiting:</span>
+                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-700">Unspecified:</span>
-                          <span className="font-mono">${processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="">${processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-green-700">Completed:</span>
-                          <span className="font-mono">${processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
+                          <span className="text-green-700">Completed:</span>
+                          <span className="">${processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0).toLocaleString()}</span>
                         </div>
                       </div>
                 <div className="text-xs text-gray-500 mt-1">
@@ -1419,42 +1414,42 @@ export default function BusinessPlanDashboard() {
             </Card>
                   {/* Average Project Size Card */}
                   <Card className="w-full">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
-                      <CardTitle className="text-sm md:text-base font-medium">Average Project Size</CardTitle>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 pt-3">
+                      <CardTitle className="text-sm font-medium text-foreground">Average Project Size</CardTitle>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
-                <div className="text-2xl font-bold text-blue-600">
+                    <CardContent className="px-3 pb-3">
+                <div className="text-xl font-semibold text-blue-600">
                   ${(processedData.reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.totalFee > 0).length || 1) / 1000).toFixed(0)}K
                 </div>
                 <p className="text-xs text-muted-foreground">Mean contract value (excluding $0 fees)</p>
                       {/* Sub-averages for Active, Awaiting, Unspecified, Completed */}
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-blue-700">Active:</span>
-                          <span className="font-mono">${(processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('active') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="text-blue-700">Active:</span>
+                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('active')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('active') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-orange-700">Awaiting:</span>
-                          <span className="font-mono">${(processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('await') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="text-orange-700">Awaiting:</span>
+                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('await')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('await') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-700">Unspecified:</span>
-                          <span className="font-mono">${(processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="">${(processedData.filter(p => !p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-green-700">Completed:</span>
-                          <span className="font-mono">${(processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
+                          <span className="text-green-700">Completed:</span>
+                          <span className="">${(processedData.filter(p => p.status?.toLowerCase().includes('completed')).reduce((sum, p) => sum + (p.totalFee || 0), 0) / (processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.totalFee > 0).length || 1) / 1000).toFixed(0)}K</span>
                         </div>
                       </div>
               </CardContent>
             </Card>
                   {/* States Covered Card */}
                   <Card className="w-full">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-2 md:px-4">
-                      <CardTitle className="text-sm md:text-base font-medium">States Covered</CardTitle>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 pt-3">
+                      <CardTitle className="text-sm font-medium text-foreground">States Covered</CardTitle>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
-                <div className="text-2xl font-bold text-purple-600">
+                    <CardContent className="px-3 pb-3">
+                <div className="text-xl font-semibold text-purple-600">
                   {new Set(processedData.filter(p => p.state && p.state.trim()).map((p) => p.state)).size}
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -1463,20 +1458,20 @@ export default function BusinessPlanDashboard() {
                       {/* Sub-counts for Active, Awaiting, Unspecified, Completed */}
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-blue-700">Active:</span>
-                          <span className="font-mono">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('active') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+                          <span className="text-blue-700">Active:</span>
+                          <span className="">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('active') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
           </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-orange-700">Awaiting:</span>
-                          <span className="font-mono">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('await') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+                          <span className="text-orange-700">Awaiting:</span>
+                          <span className="">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('await') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-700">Unspecified:</span>
-                          <span className="font-mono">{new Set(processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+                          <span className="">{new Set(processedData.filter(p => (!p.status || (!p.status.toLowerCase().includes('active') && !p.status.toLowerCase().includes('await') && !p.status.toLowerCase().includes('completed'))) && p.state && p.state.trim()).map((p) => p.state)).size}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-green-700">Completed:</span>
-                          <span className="font-mono">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
+                          <span className="text-green-700">Completed:</span>
+                          <span className="">{new Set(processedData.filter(p => p.status?.toLowerCase().includes('completed') && p.state && p.state.trim()).map((p) => p.state)).size}</span>
                         </div>
                 </div>
               </CardContent>
@@ -1509,13 +1504,6 @@ export default function BusinessPlanDashboard() {
                     Quarterly Awards
                   </Button>
                   <Button
-                    variant={chartViewType === "growth" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setChartViewType("growth")}
-                  >
-                    Growth Trend
-                  </Button>
-                  <Button
                     variant={chartViewType === "map" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setChartViewType("map")}
@@ -1537,7 +1525,7 @@ export default function BusinessPlanDashboard() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <Card className="w-full">
                           
-                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                          <CardContent className="px-3 pb-3">
                             <div className="space-y-3">
                               {mapStateData.slice(0, 6).map((stateData, index) => (
                                 <div
@@ -1567,9 +1555,9 @@ export default function BusinessPlanDashboard() {
 
                         <Card className="w-full">
                           <CardHeader>
-                            <CardTitle className="text-sm md:text-base font-medium">Practice Areas</CardTitle>
+                            <CardTitle className="text-sm font-medium text-foreground">Practice Areas</CardTitle>
                           </CardHeader>
-                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                          <CardContent className="px-3 pb-3">
                             <div className="space-y-3">
                               {practiceAreaData.slice(0, 5).map((areaData, index) => (
                                 <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
@@ -1593,9 +1581,9 @@ export default function BusinessPlanDashboard() {
 
                         <Card className="w-full">
                           <CardHeader>
-                            <CardTitle className="text-sm md:text-base font-medium">Project Status</CardTitle>
+                            <CardTitle className="text-sm font-medium text-foreground">Project Status</CardTitle>
                           </CardHeader>
-                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                          <CardContent className="px-3 pb-3">
                             <div className="space-y-3">
                               {statusData.map((statusItem, index) => (
                                 <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
@@ -1621,9 +1609,9 @@ export default function BusinessPlanDashboard() {
                       {studioData.length > 1 && (
                         <Card className="w-full">
                           <CardHeader>
-                            <CardTitle className="text-sm md:text-base font-medium">Studio Performance</CardTitle>
+                            <CardTitle className="text-sm font-medium text-foreground">Studio Performance</CardTitle>
                           </CardHeader>
-                          <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                          <CardContent className="px-3 pb-3">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                               {studioData.map((studioItem, index) => (
                                 <div key={index} className="flex justify-between items-center p-3 bg-muted rounded-lg">
@@ -1663,54 +1651,6 @@ export default function BusinessPlanDashboard() {
                     </div>
                   </div>
                 )}
-
-                {chartViewType === "growth" && growthTrendData.length > 0 && (
-                  <div className="mb-4 p-4 bg-muted rounded-lg">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <div className="font-semibold">2023 Starting Value</div>
-                        <div className="text-2xl font-bold text-primary">
-                          ${(growthTrendData[0]?.cumulativeValue / 1000).toFixed(0)}K
-                        </div>
-                      </div>
-                      <div>
-                        <div className="font-semibold">Current Value (2026)</div>
-                        <div className="text-2xl font-bold text-green-600">
-                          $
-                          {(
-                            growthTrendData.find((d) => d.year === "2026" && !d.isProjected)?.cumulativeValue / 1000000 ||
-                            growthTrendData[growthTrendData.findIndex((d) => d.isProjected) - 1]?.cumulativeValue /
-                              1000000 ||
-                            0
-                          ).toFixed(1)}
-                          M
-                        </div>
-                      </div>
-                      <div>
-                        <div className="font-semibold flex items-center gap-2">Growth Rate (CAGR)
-                          <input
-                            type="number"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            value={cagr}
-                            onChange={e => setCagr(Number(e.target.value))}
-                            className="ml-2 w-24 px-3 py-1 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="0.20"
-                          />
-                        </div>
-                        <div className="text-2xl font-bold text-blue-600">{(cagr * 100).toFixed(1)}%</div>
-                      </div>
-                      <div>
-                        <div className="font-semibold">2030 Projection</div>
-                        <div className="text-2xl font-bold text-purple-600">
-                          ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toFixed(1)}M
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
 
 
                 {chartViewType === "projects" && (
@@ -1991,119 +1931,6 @@ export default function BusinessPlanDashboard() {
                   </div>
                 )}
 
-                {chartViewType === "growth" && (
-                  <div className="flex gap-4">
-                    <ChartContainer
-                      config={{
-                        cumulativeValue: {
-                          label: "Cumulative Value",
-                          color: "hsl(var(--chart-4))",
-                        },
-                        projected: {
-                          label: "Projected Value",
-                          color: "hsl(var(--chart-5))",
-                        },
-                      }}
-                      className="h-[500px]"
-                    >
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={growthTrendData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="year" fontSize={12} />
-                          <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
-                          <ChartTooltip
-                            content={({ active, payload, label }) => {
-                              if (active && payload && payload.length) {
-                                const data = payload[0].payload
-                                const isProjected = data.isProjected
-                                return (
-                                  <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
-                                    <p className="font-semibold">
-                                      {data.year} {isProjected && "(Projected)"}
-                                    </p>
-                                    <p className="text-lg font-bold text-primary">
-                                      ${data.cumulativeValue.toLocaleString()}
-                                    </p>
-                                    {!isProjected && data.yearlyValue > 0 && (
-                                      <p className="text-sm text-muted-foreground">
-                                        New contracts: ${data.yearlyValue.toLocaleString()}
-                                      </p>
-                                    )}
-                                    {isProjected && data.growthRate && (
-                                      <p className="text-sm text-muted-foreground">
-                                        Growth rate: {(data.growthRate * 100).toFixed(1)}% CAGR
-                                      </p>
-                                    )}
-                                    {!isProjected && data.projects && data.projects.length > 0 && (
-                                      <>
-                                        <p className="text-sm text-muted-foreground mt-2">
-                                          Projects ({data.projects.length}):
-                                        </p>
-                                        <ul className="text-xs text-muted-foreground mt-1 space-y-1">
-                                          {data.projects.slice(0, 3).map((project: string, idx: number) => (
-                                            <li key={idx} className="truncate">
-                                              • {project.length > 25 ? project.substring(0, 25) + "..." : project}
-                                            </li>
-                                          ))}
-                                          {data.projects.length > 3 && (
-                                            <li className="text-xs">... and {data.projects.length - 3} more</li>
-                                          )}
-                                        </ul>
-                                      </>
-                                    )}
-                                  </div>
-                                )
-                              }
-                              return null
-                            }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="cumulativeValue"
-                            stroke="var(--color-cumulativeValue)"
-                            strokeWidth={3}
-                            dot={(props) => {
-                              const { payload } = props
-                              return (
-                                <circle
-                                  key={payload.year}
-                                  cx={props.cx}
-                                  cy={props.cy}
-                                  r={payload?.isProjected ? 3 : 5}
-                                  fill={payload?.isProjected ? "hsl(var(--chart-5))" : "var(--color-cumulativeValue)"}
-                                  strokeWidth={payload?.isProjected ? 2 : 0}
-                                  stroke={payload?.isProjected ? "var(--color-cumulativeValue)" : "none"}
-                                  strokeDasharray={payload?.isProjected ? "4,4" : "none"}
-                                />
-                              )
-                            }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </ChartContainer>
-                    <div className="w-[200px] space-y-2 self-center">
-                      <MultiSelectDropdown
-                        options={states}
-                        selected={filterState}
-                        onChange={setFilterState}
-                        title="States"
-                      />
-                      <MultiSelectDropdown
-                        options={practiceAreas}
-                        selected={filterPracticeArea}
-                        onChange={setFilterPracticeArea}
-                        title="Areas"
-                      />
-                      <MultiSelectDropdown
-                        options={statuses}
-                        selected={filterStatus}
-                        onChange={setFilterStatus}
-                        title="Statuses"
-                      />
-                    </div>
-                  </div>
-                )}
-
                 {(chartViewType === "projects") && (
                   <div className="mt-4 flex items-center justify-center gap-6 text-sm">
                     <div className="flex items-center gap-2">
@@ -2128,38 +1955,38 @@ export default function BusinessPlanDashboard() {
         {allowedTabs.includes('financial') && (
         <TabsContent value="financial">
           <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'expenses' | 'revenue' | 'cashflow' | 'overview')} className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-4 bg-blue-50 border border-blue-200 shadow-sm rounded-lg h-14 min-h-[56px] px-2 mb-4">
+              <TabsList className="grid w-full grid-cols-4 bg-white border-b border-border h-14 min-h-[56px] px-0 mb-6 rounded-none">
                 <TabsTrigger
                   value="expenses"
-                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
-                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
-                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                  className="px-4 py-3 rounded-none font-medium h-12 flex items-center justify-center transition-all duration-200 border-b-2 border-transparent
+                    data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
+                    data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent"
                 >
                   Expenses
                 </TabsTrigger>
                 <TabsTrigger
                   value="revenue"
-                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
-                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
-                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                  className="px-4 py-3 rounded-none font-medium h-12 flex items-center justify-center transition-all duration-200 border-b-2 border-transparent
+                    data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
+                    data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent"
                 >
                   Revenue
                 </TabsTrigger>
                 <TabsTrigger
                   value="cashflow"
-                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
-                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
-                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                  className="px-4 py-3 rounded-none font-medium h-12 flex items-center justify-center transition-all duration-200 border-b-2 border-transparent
+                    data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
+                    data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent"
                 >
                   Cash Flow
                 </TabsTrigger>
                 <TabsTrigger
                   value="overview"
-                  className="px-4 py-3 rounded-lg font-semibold h-12 flex items-center justify-center transition-colors duration-150
-                    data-[state=active]:bg-blue-700 data-[state=active]:text-white data-[state=active]:shadow-md
-                    data-[state=inactive]:bg-blue-100 data-[state=inactive]:text-blue-800 hover:bg-blue-200 hover:text-blue-900"
+                  className="px-4 py-3 rounded-none font-medium h-12 flex items-center justify-center transition-all duration-200 border-b-2 border-transparent
+                    data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
+                    data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent"
                 >
-
+                  Overview
                 </TabsTrigger>
         </TabsList>
             
@@ -2262,7 +2089,7 @@ export default function BusinessPlanDashboard() {
                                     {payload.map((item, idx) => (
                                       <div key={idx} className="flex justify-between">
                                         <span>{item.name}</span>
-                                        <span className="font-bold">${typeof item.value === 'number' ? item.value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : item.value}</span>
+                                        <span className="font-medium">${typeof item.value === 'number' ? item.value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : item.value}</span>
                                       </div>
                                     ))}
                               </div>
@@ -2335,7 +2162,7 @@ export default function BusinessPlanDashboard() {
                     return (
                       <button
                         type="button"
-                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
                         onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, personnel: !prev.personnel }))}
                       >
                         <span>Personnel Costs</span>
@@ -2400,7 +2227,7 @@ export default function BusinessPlanDashboard() {
                     return (
                       <button
                         type="button"
-                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
                         onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, office: !prev.office }))}
                       >
                         <span>Office & Facilities</span>
@@ -2450,7 +2277,7 @@ export default function BusinessPlanDashboard() {
                     return (
                       <button
                         type="button"
-                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
                         onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, technology: !prev.technology }))}
                       >
                         <span>Technology</span>
@@ -2500,7 +2327,7 @@ export default function BusinessPlanDashboard() {
                     return (
                       <button
                         type="button"
-                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
                         onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, professional: !prev.professional }))}
                       >
                         <span>Professional Services</span>
@@ -2559,7 +2386,7 @@ export default function BusinessPlanDashboard() {
                     return (
                       <button
                         type="button"
-                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
                         onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, business: !prev.business }))}
                       >
                         <span>Business Development</span>
@@ -2609,7 +2436,7 @@ export default function BusinessPlanDashboard() {
                     return (
                       <button
                         type="button"
-                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
                         onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, financing: !prev.financing }))}
                       >
                         <span>Financing</span>
@@ -2660,7 +2487,7 @@ export default function BusinessPlanDashboard() {
                     return (
                       <button
                         type="button"
-                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded transition-colors focus:outline-none mb-1"
+                        className="flex items-center w-full justify-between font-semibold text-sm border-b pb-1 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus:outline-none mb-1"
                         onClick={() => setExpenseGroupsCollapsed(prev => ({ ...prev, other: !prev.other }))}
                       >
                         <span>Other</span>
@@ -2897,7 +2724,7 @@ export default function BusinessPlanDashboard() {
                   {useManualRevenue ? 'Manual revenue input' : 'Project-based revenue calculation'} from 2026-2031
                 </CardDescription>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                    <CardContent className="px-3 pb-3">
                 <ChartContainer
                   config={{
                     contractRevenue: {
@@ -2945,7 +2772,7 @@ export default function BusinessPlanDashboard() {
                 <CardTitle>Profit Margins</CardTitle>
                 <CardDescription>Net income and profit margin trends</CardDescription>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                    <CardContent className="px-3 pb-3">
                 <ChartContainer
                   config={{
                     netIncome: {
@@ -3069,23 +2896,23 @@ export default function BusinessPlanDashboard() {
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 text-sm">
                 <div>
                   <div className="font-semibold">External Equity</div>
-                  <div className="text-2xl font-bold text-primary">${(startingCash / 1000).toFixed(0)}K</div>
+                  <div className="text-xl font-semibold text-primary">${(startingCash / 1000).toFixed(0)}K</div>
                 </div>
                 <div>
                   <div className="font-semibold">Total Revenue</div>
-                  <div className="text-2xl font-bold text-blue-600">
+                  <div className="text-xl font-semibold text-blue-600">
                     ${(cashFlowProjections.reduce((sum, p) => sum + p.revenue, 0) / 1000000).toFixed(1)}M
                   </div>
                 </div>
                 <div>
                   <div className="font-semibold">Total Expenses</div>
-                  <div className="text-2xl font-bold text-red-600">
+                  <div className="text-xl font-semibold text-red-600">
                     ${(cashFlowProjections.reduce((sum, p) => sum + p.expenses, 0) / 1000000).toFixed(1)}M
                   </div>
                 </div>
                 <div>
                   <div className="font-semibold">Total Cash Flow</div>
-                  <div className="text-2xl font-bold text-green-600">
+                  <div className="text-xl font-semibold text-green-600">
                     ${(cashFlowProjections.reduce((sum, p) => sum + p.cashAmount, 0) / 1000000).toFixed(1)}M
                   </div>
                 </div>
@@ -3093,7 +2920,7 @@ export default function BusinessPlanDashboard() {
                   <div className="font-semibold">
                     Ending Cash ({cashFlowProjections[cashFlowProjections.length - 1].year})
                   </div>
-                  <div className="text-2xl font-bold text-purple-600">
+                  <div className="text-xl font-semibold text-purple-600">
                     ${(cashFlowProjections[cashFlowProjections.length - 1].cumulativeCash / 1000000).toFixed(1)}M
                   </div>
                 </div>
@@ -3188,13 +3015,143 @@ export default function BusinessPlanDashboard() {
 
         </TabsContent>
         <TabsContent value="overview" className="flex-1 overflow-auto space-y-4">
+          {/* Growth Trend Section */}
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle>Revenue Growth Trend</CardTitle>
+              <CardDescription>Cumulative project value over time (2023-2030)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {growthTrendData.length > 0 && (
+                <>
+                  <div className="mb-4 p-4 bg-muted rounded-lg">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <div className="font-semibold">2023 Starting Value</div>
+                        <div className="text-xl font-semibold text-primary">
+                          ${(growthTrendData[0]?.cumulativeValue / 1000).toFixed(0)}K
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Current Value (2026)</div>
+                        <div className="text-xl font-semibold text-green-600">
+                          $
+                          {(
+                            growthTrendData.find((d) => d.year === "2026" && !d.isProjected)?.cumulativeValue / 1000000 ||
+                            growthTrendData[growthTrendData.findIndex((d) => d.isProjected) - 1]?.cumulativeValue /
+                              1000000 ||
+                            0
+                          ).toFixed(1)}
+                          M
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold flex items-center gap-2">Growth Rate (CAGR)
+                          <input
+                            type="number"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={cagr}
+                            onChange={e => setCagr(Number(e.target.value))}
+                            className="ml-2 w-24 px-3 py-1 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="0.20"
+                          />
+                        </div>
+                        <div className="text-xl font-semibold text-blue-600">{(cagr * 100).toFixed(1)}%</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">2030 Projection</div>
+                        <div className="text-xl font-semibold text-purple-600">
+                          ${(growthTrendData.find((d) => d.year === "2030")?.cumulativeValue / 1000000 || 0).toFixed(1)}M
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <ChartContainer
+                    config={{
+                      cumulativeValue: {
+                        label: "Cumulative Value",
+                        color: "hsl(var(--chart-1))",
+                      },
+                      projected: {
+                        label: "Projected Value",
+                        color: "hsl(var(--chart-2))",
+                      },
+                    }}
+                    className="h-72"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={growthTrendData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="year" fontSize={12} />
+                        <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`} fontSize={12} />
+                        <ChartTooltip
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload
+                              const isProjected = data.isProjected
+                              return (
+                                <div className="bg-background border rounded-lg p-3 shadow-lg max-w-xs">
+                                  <p className="font-semibold">
+                                    {data.year} {isProjected && "(Projected)"}
+                                  </p>
+                                  <p className="text-lg font-semibold text-primary">
+                                    ${data.cumulativeValue.toLocaleString()}
+                                  </p>
+                                  {!isProjected && data.yearlyValue > 0 && (
+                                    <p className="text-sm text-muted-foreground">
+                                      New contracts: ${data.yearlyValue.toLocaleString()}
+                                    </p>
+                                  )}
+                                  {isProjected && data.growthRate && (
+                                    <p className="text-sm text-muted-foreground">
+                                      Growth rate: {(data.growthRate * 100).toFixed(1)}% CAGR
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            }
+                            return null
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="cumulativeValue"
+                          stroke="var(--color-cumulativeValue)"
+                          strokeWidth={3}
+                          dot={(props) => {
+                            const { payload } = props
+                            return (
+                              <circle
+                                key={payload.year}
+                                cx={props.cx}
+                                cy={props.cy}
+                                r={payload?.isProjected ? 3 : 5}
+                                fill={payload?.isProjected ? "hsl(var(--chart-2))" : "var(--color-cumulativeValue)"}
+                                strokeWidth={payload?.isProjected ? 2 : 0}
+                                stroke={payload?.isProjected ? "var(--color-cumulativeValue)" : "none"}
+                                strokeDasharray={payload?.isProjected ? "4,4" : "none"}
+                              />
+                            )
+                          }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <Card className="w-full">
               <CardHeader>
                 <CardTitle>Business Projections Summary</CardTitle>
                 <CardDescription>Key financial metrics for 2026-2031</CardDescription>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                    <CardContent className="px-3 pb-3">
                 <div className="space-y-4">
                   {businessProjections.map((proj) => (
                     <div key={proj.year} className="flex justify-between items-center p-3 bg-muted rounded-lg">
@@ -3217,7 +3174,7 @@ export default function BusinessPlanDashboard() {
                 <CardTitle>Project Distribution</CardTitle>
                 <CardDescription>Breakdown by practice area and status</CardDescription>
               </CardHeader>
-                    <CardContent className="px-2 md:px-4 py-2 md:py-4">
+                    <CardContent className="px-3 pb-3">
                 <div className="space-y-4">
                   <div>
                     <h4 className="font-medium mb-2">By Practice Area</h4>
@@ -3284,159 +3241,6 @@ export default function BusinessPlanDashboard() {
             </TabsContent>
           </Tabs>
         </TabsContent>
-        )}
-        {allowedTabs.includes('notetaker') && (
-          <TabsContent value="notetaker">
-            <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow border">
-              <div className="flex items-start justify-between mb-2">
-                <h2 className="text-xl font-bold">Notetaker</h2>
-                {/* Pie chart for note distribution */}
-                <div className="flex flex-col md:flex-row items-end md:items-start min-w-[180px] md:min-w-[260px] gap-2 md:gap-4">
-                  <PieChart width={90} height={90} className="mx-auto md:mx-0" />
-                  <div className="mt-2 md:mt-0">
-                    <Legend layout="vertical" align="left" verticalAlign="middle" />
-                  </div>
-                </div>
-              </div>
-              <form
-                onSubmit={e => {
-                  e.preventDefault()
-                  if (noteText.trim() && noteCategory !== 'All') {
-                    setNotes([{ text: noteText, category: noteCategory, timestamp: Date.now() }, ...notes])
-                    setNoteText('')
-                    setNoteSaved(true)
-                    setTimeout(() => setNoteSaved(false), 1500)
-                  }
-                  if (noteCategory === 'Other' && newCategory.trim()) {
-                    if (!categories.includes(newCategory.trim())) {
-                      setCategories([...categories, newCategory.trim()])
-                      setNoteCategory(newCategory.trim())
-                      setNewCategory('')
-                      localStorage.setItem('dashboardNoteCategories', JSON.stringify([...categories, newCategory.trim()]))
-                    }
-                  }
-                }}
-                className="flex flex-col gap-2 mb-6 w-full"
-              >
-                <div className="flex flex-row gap-2 items-end mb-2">
-                  <select
-                    value={noteCategory}
-                    onChange={e => {
-                      setNoteCategory(e.target.value)
-                      if (e.target.value !== 'Other') setNewCategory('')
-                    }}
-                    className="px-2 py-2 border rounded"
-                  >
-                    {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                    <option value="Other">Other</option>
-                  </select>
-                  {noteCategory === 'Other' && (
-                    <input
-                      type="text"
-                      value={newCategory}
-                      onChange={e => setNewCategory(e.target.value)}
-                      placeholder="New category name"
-                      className="px-2 py-2 border rounded"
-                      required
-                    />
-                  )}
-                  <Button type="submit" className="px-4 py-2 text-base">Add Note</Button>
-                  {noteSaved && <div className="text-green-600 text-xs ml-2">Note saved!</div>}
-                </div>
-                {/* Removed the Note (Markdown supported): label */}
-                <div data-color-mode="light">
-                  <MDEditor
-                    value={noteText}
-                    onChange={v => setNoteText(v || '')}
-                    height={120}
-                    preview="edit"
-                    previewOptions={{
-                      components: {
-                        code({className, children, ...props}) {
-                          return <code className={className} {...props}>{children}</code>
-                        }
-                      }
-                    }}
-                  />
-                </div>
-              </form>
-              {/* Notetaker filter bar */}
-              <div className="flex gap-2 mb-4 overflow-x-auto whitespace-nowrap scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                <button
-                  className={`px-3 py-1 rounded ${noteFilter === 'All' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                  onClick={() => setNoteFilter('All')}
-                >
-                  All
-                </button>
-                {categories.map((cat: string) => (
-                  <button
-                    key={cat}
-                    className={`px-3 py-1 rounded ${noteFilter === cat ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                    onClick={() => setNoteFilter(cat)}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-col gap-4">
-                {(noteFilter === 'All' ? categories : [noteFilter]).map((cat: string) => (
-                  <div key={cat} className="bg-gray-50 rounded-lg p-4 border w-full">
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-semibold text-center flex-1">{cat}</h3>
-                      {categories.length > 1 && (
-                        <button
-                          className="ml-2 text-xs text-red-500 hover:text-red-700"
-                          title={`Delete category '${cat}'`}
-                          onClick={() => {
-                            if (window.confirm(`Delete category '${cat}' and all its notes? This cannot be undone.`)) {
-                              setCategories(prev => {
-                                const updated = prev.filter(c => c !== cat)
-                                localStorage.setItem('dashboardNoteCategories', JSON.stringify(updated))
-                                return updated
-                              })
-                              setNotes(prev => prev.filter(n => n.category !== cat))
-                              if (noteCategory === cat && categories.length > 1) {
-                                setNoteCategory(categories.find(c => c !== cat) || '')
-                              }
-                              if (noteFilter === cat) {
-                                setNoteFilter('All')
-                              }
-                            }
-                          }}
-                        >
-                          🗑️
-                        </button>
-                      )}
-                    </div>
-                    <ul className="space-y-2">
-                      {notes.filter(n => n.category === cat).length === 0 && (
-                        <li className="text-xs text-gray-400 text-center">No notes</li>
-                      )}
-                      {notes.filter(n => n.category === cat).map((note, idx) => (
-                        <li key={note.timestamp + '-' + idx} className="text-sm flex flex-col group relative">
-                          <div className="prose prose-sm max-w-none">
-                            <ReactMarkdown>{note.text}</ReactMarkdown>
-                          </div>
-                          <span className="text-xs text-gray-400 mt-1">{new Date(note.timestamp).toLocaleString()}</span>
-                          <button
-                            className="absolute top-1 right-1 text-xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity underline"
-                            title="Delete note"
-                            onClick={() => {
-                              setNotes(notes => notes.filter(n => n.timestamp !== note.timestamp))
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </TabsContent>
         )}
       </Tabs>
     </div>

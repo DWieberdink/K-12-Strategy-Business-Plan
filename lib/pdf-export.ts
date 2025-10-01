@@ -1,7 +1,7 @@
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
 
-export type TabType = "financial" | "strategy" | "project-performance" | "notetaker"
+export type TabType = "business-plan" | "financial" | "strategy" | "project-performance"
 
 export const handleExportCurrentTabPDF = async (mainTab: TabType) => {
   try {
