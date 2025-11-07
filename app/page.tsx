@@ -31,38 +31,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Interactive Planning Tools Demo Section */}
-        <section className="py-20 bg-muted/30">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl lg:text-4xl font-bold mb-4">Interactive Planning Tools</h2>
-              <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                We build custom interactive tools that enable district leaders to explore scenarios, analyze capacity,
-                and make data-driven decisions in real-time.
-              </p>
-            </div>
-            <div className="max-w-5xl mx-auto">
-              <div className="rounded-lg overflow-hidden shadow-xl border border-border bg-black">
-                <video
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  className="w-full h-auto"
-                  aria-label="Interactive planning dashboard demo showing capital planning scenario modeling and survey insights"
-                  poster="/interactive-dashboard-data-visualization-planning-.jpg"
-                >
-                  <source src="/videos/jeffco-capital-plan.webm" type="video/webm" />
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-              <p className="text-center text-sm text-muted-foreground mt-4">
-                Demo: Capital planning dashboard for scenario modeling and community survey insights
-              </p>
-            </div>
-          </div>
-        </section>
-
         {/* Services Overview */}
         <section className="py-20 bg-background">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -162,6 +130,38 @@ export default function HomePage() {
                   </p>
                 </CardContent>
               </Card>
+            </div>
+          </div>
+        </section>
+
+        {/* Interactive Planning Tools Demo Section */}
+        <section className="py-20 bg-muted/30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl lg:text-4xl font-bold mb-4">Interactive Planning Tools</h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+                We build custom interactive tools that enable district leaders to explore scenarios, analyze capacity,
+                and make data-driven decisions in real-time.
+              </p>
+            </div>
+            <div className="max-w-5xl mx-auto">
+              <div className="rounded-lg overflow-hidden shadow-xl border border-border bg-black">
+                <video
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-auto"
+                  aria-label="Interactive planning dashboard demo showing capital planning scenario modeling and survey insights"
+                  poster="/interactive-dashboard-data-visualization-planning-.jpg"
+                >
+                  <source src="/videos/jeffco-capital-plan.webm" type="video/webm" />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+              <p className="text-center text-sm text-muted-foreground mt-4">
+                Demo: Capital planning dashboard for scenario modeling and community survey insights
+              </p>
             </div>
           </div>
         </section>
