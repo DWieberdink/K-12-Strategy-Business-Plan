@@ -42,19 +42,22 @@ export default function HomePage() {
               </p>
             </div>
             <div className="max-w-5xl mx-auto">
-              <div className="rounded-lg overflow-hidden shadow-xl border border-border">
+              <div className="rounded-lg overflow-hidden shadow-xl border border-border bg-black">
                 <video
-                  src="/siteplan-video.mp4"
                   autoPlay
                   loop
                   muted
                   playsInline
                   className="w-full h-auto"
-                  aria-label="Interactive site planning tool demonstration showing building placement, capacity analysis, and capital cost estimation"
-                />
+                  aria-label="Interactive planning dashboard demo showing capital planning scenario modeling and survey insights"
+                  poster="/interactive-dashboard-data-visualization-planning-.jpg"
+                >
+                  <source src="/videos/jeffco-capital-plan.webm" type="video/webm" />
+                  Your browser does not support the video tag.
+                </video>
               </div>
               <p className="text-center text-sm text-muted-foreground mt-4">
-                Example: Interactive site planning tool for scenario modeling and capacity analysis
+                Demo: Capital planning dashboard for scenario modeling and community survey insights
               </p>
             </div>
           </div>
