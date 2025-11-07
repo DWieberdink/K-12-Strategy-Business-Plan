@@ -110,8 +110,8 @@ export default function BusinessPlanDashboard() {
     { key: 'financial', label: 'Financial Projections' },
     { key: 'strategy', label: 'Go To Market' },
   ]
+  const allowedTabs = allTabs.map((tab) => tab.key)
   const ADMIN_PASSWORD = '12'
-  const [allowedTabs, setAllowedTabs] = useState<string[]>([])
   const [userAccess, setUserAccess] = useState<{ [pw: string]: string[] }>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('dashboardUserAccess')
@@ -119,7 +119,7 @@ export default function BusinessPlanDashboard() {
     }
     return { [ADMIN_PASSWORD]: allTabs.map(t => t.key) }
   })
-  const [isAdmin, setIsAdmin] = useState(false)
+  const isAdmin = true
 
   // Add state for summary section collapse (must be before any early returns)
   const [summaryOpen, setSummaryOpen] = useState(true)
@@ -134,12 +134,6 @@ export default function BusinessPlanDashboard() {
   const [isUsingCsvData, setIsUsingCsvData] = useState(false)
   const [showMonthlyExpenses, setShowMonthlyExpenses] = useState(false)
   const [startingCash, setStartingCash] = useState(300000)
-
-  // Password protection state
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [password, setPassword] = useState('')
-  const [passwordError, setPasswordError] = useState('')
-  const [showPasswordModal, setShowPasswordModal] = useState(true)
 
   // Original chart states
   const [sortBy, setSortBy] = useState<"fee" | "date" | "name">("fee")
@@ -733,27 +727,6 @@ export default function BusinessPlanDashboard() {
     setChartViewType("projects")
   }
 
-  // Password validation function
-  const handlePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (password === '12') {
-      setIsAuthenticated(true)
-      setShowPasswordModal(false)
-      setPasswordError('')
-      setAllowedTabs(allTabs.map(t => t.key))
-      setIsAdmin(true)
-    } else if (userAccess[password]) {
-      setIsAuthenticated(true)
-      setShowPasswordModal(false)
-      setPasswordError('')
-      setAllowedTabs(userAccess[password])
-      setIsAdmin(false)
-    } else {
-      setPasswordError('Incorrect password. Please try again.')
-      setPassword('')
-    }
-  }
-
   // Admin panel for managing user access
   const [newUserPw, setNewUserPw] = useState('')
   const [newUserTabs, setNewUserTabs] = useState<string[]>([])
@@ -802,54 +775,6 @@ export default function BusinessPlanDashboard() {
       return row
     })
   }, [projectionYears, fteMode, manualFTEs, fteBase, fteGrowth, expenseParams])
-
-  // If not authenticated, show password modal
-  if (!isAuthenticated) {
-  return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
-          <div className="text-center mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Business Plan Dashboard</h2>
-            <p className="text-gray-600">Please enter the password to access the dashboard</p>
-          </div>
-          
-          <form onSubmit={handlePasswordSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter password"
-                required
-              />
-            </div>
-            
-            {passwordError && (
-              <div className="text-red-600 text-sm">{passwordError}</div>
-            )}
-            
-            <button
-              type="submit"
-              className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors shadow-sm"
-            >
-              Access Dashboard
-            </button>
-          </form>
-          
-          <div className="mt-4 text-center">
-            <p className="text-xs text-gray-500">
-              Contact your administrator for access credentials
-            </p>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // Place this here:
   const getQuarterStatus = (projects: string[]) => {

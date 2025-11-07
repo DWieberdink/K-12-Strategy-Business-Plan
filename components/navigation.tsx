@@ -56,7 +56,9 @@ export function Navigation() {
                 pathname === dashboardNavItem.href && "bg-secondary text-secondary-foreground hover:bg-secondary/90",
               )}
             >
-              <Link href={dashboardNavItem.href}>{dashboardNavItem.label}</Link>
+              <Link href={dashboardNavItem.href} target="_blank" rel="noopener noreferrer">
+                {dashboardNavItem.label}
+              </Link>
             </Button>
           )}
 
@@ -73,6 +75,8 @@ export function Navigation() {
               <Link
                 key={item.href}
                 href={item.href}
+                target={item.href === "/k12-strategy" ? "_blank" : undefined}
+                rel={item.href === "/k12-strategy" ? "noopener noreferrer" : undefined}
                 className={cn(
                   "block px-3 py-2 text-base font-medium rounded-md transition-colors",
                   pathname === item.href
