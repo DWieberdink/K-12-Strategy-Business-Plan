@@ -37,7 +37,7 @@ import {
 import Link from 'next/link'
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
-import { Input } from "./components/ui/input"
+import { Input } from "@/components/ui/input"
 import { cleanFee, parseCSV, aggregateProjectData, calculateMonthlyRevenue, getQuarter } from "@/lib/data-processing"
 import { calculateExpenses, calculateRevenue, getFTE, updateExpenseParam, defaultExpenseParams } from "@/lib/financial-calculations"
 import { handleExportCurrentTabPDF, handleExportAllTabsPDF } from "@/lib/pdf-export"

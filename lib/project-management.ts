@@ -1,3 +1,4 @@
+import type React from "react"
 import { parseCSV, cleanFee } from "./data-processing"
 
 export const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, setProjects: (projects: any[]) => void) => {
