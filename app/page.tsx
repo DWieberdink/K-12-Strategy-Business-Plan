@@ -1,6 +1,5 @@
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Building2, TrendingUp, Users, BarChart3, Scale, Wrench } from "lucide-react"
 import Link from "next/link"
@@ -13,20 +12,15 @@ export default function HomePage() {
       <main className="flex-1">
         {/* Hero Section */}
         <section className="relative bg-primary text-primary-foreground">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-20">
             <div className="max-w-3xl">
               <h1 className="text-4xl lg:text-6xl font-bold mb-6 text-balance">
                 Building the Future of Educational Facilities
               </h1>
-              <p className="text-lg lg:text-xl mb-8 text-primary-foreground/90 leading-relaxed">
+              <p className="text-lg lg:text-xl text-primary-foreground/90 leading-relaxed">
                 We partner with school districts to understand demographic trends, assess building conditions, and
                 develop strategic plans that ensure facilities support student success and program excellence.
               </p>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button size="lg" variant="secondary">
-                  Explore Our Services
-                </Button>
-              </div>
             </div>
           </div>
         </section>
