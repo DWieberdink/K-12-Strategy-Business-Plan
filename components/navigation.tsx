@@ -20,6 +20,8 @@ const navItems = [
 export function Navigation() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const primaryNavItems = navItems.slice(0, -1)
+  const dashboardNavItem = navItems.at(-1)
 
   return (
     <nav className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -30,8 +32,8 @@ export function Navigation() {
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-1">
-            {navItems.map((item) => (
+          <div className="hidden lg:flex flex-1 items-center justify-center gap-1">
+            {primaryNavItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -45,8 +47,18 @@ export function Navigation() {
                 {item.label}
               </Link>
             ))}
-            
           </div>
+          {dashboardNavItem && (
+            <Button
+              asChild
+              className={cn(
+                "hidden lg:inline-flex ml-6",
+                pathname === dashboardNavItem.href && "bg-secondary text-secondary-foreground hover:bg-secondary/90",
+              )}
+            >
+              <Link href={dashboardNavItem.href}>{dashboardNavItem.label}</Link>
+            </Button>
+          )}
 
           {/* Mobile Menu Button */}
           <button className="lg:hidden p-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
