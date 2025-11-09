@@ -1012,61 +1012,61 @@ export default function BusinessPlanDashboard() {
               {tab.label}
             </TabsTrigger>
           ))}
-          <div className="ml-auto flex items-center gap-1 h-full">
-            {/* Upload CSV button */}
-            <label htmlFor="csv-upload" className="h-full flex items-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="cursor-pointer text-muted-foreground hover:text-foreground hover:bg-transparent h-12 px-3 flex items-center font-medium"
-                asChild
-              >
-                <span className="flex items-center h-full gap-1.5">
-                  <Upload className="w-4 h-4" />
-                  <span className="text-sm">Upload CSV</span>
-                </span>
-              </Button>
-              <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" />
-            </label>
-            
-            {/* Reset to Default Data button */}
-            {isUsingCsvData && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetToDefaultData}
-                className="cursor-pointer text-muted-foreground hover:text-foreground hover:bg-transparent h-12 px-3 flex items-center font-medium"
-              >
-                <span className="flex items-center h-full text-sm">
-                  Reset
-                </span>
-              </Button>
-            )}
-            
-            {isAdmin && (
-              <Link href="/admin" passHref legacyBehavior>
-                <a className="inline-flex items-center px-3 h-12 text-sm font-medium text-muted-foreground hover:text-foreground transition">Admin</a>
-            </Link>
-            )}
+          <div className="ml-auto flex items-center">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="cursor-pointer text-muted-foreground hover:text-foreground hover:bg-transparent h-12 px-3 flex items-center font-medium"
+                  size="icon"
+                  className="text-muted-foreground hover:text-foreground hover:bg-transparent h-10 w-10 rounded-full"
                 >
-                  <span className="flex items-center h-full text-sm">
-                    Export PDF
-                  </span>
+                  <MoreHorizontal className="w-5 h-5" />
+                  <span className="sr-only">Open dashboard actions</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleExportCurrentTabPDF}>
-                  Export Current Tab
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault()
+                    fileInputRef.current?.click()
+                  }}
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload CSV
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportAllTabsPDF}>
-                  Export All Tabs
-                </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/k12-strategy/admin" className="flex items-center gap-2">
+                      <Settings2 className="w-4 h-4" />
+                      Admin
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="flex items-center gap-2">
+                    <FileDown className="w-4 h-4" />
+                    Export PDF
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent alignOffset={-4} className="w-52">
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault()
+                        handleExportCurrentTabPDF()
+                      }}
+                    >
+                      Current tab
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault()
+                        handleExportAllTabsPDF()
+                      }}
+                    >
+                      All tabs
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
