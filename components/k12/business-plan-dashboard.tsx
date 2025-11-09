@@ -3,6 +3,7 @@
 import React from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useState, useMemo, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Upload, MapPin, ChevronsUpDown, ChevronDown, MoreHorizontal, FileDown, Settings2 } from "lucide-react"
@@ -33,9 +34,6 @@ import {
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu"
 import Link from 'next/link'
 import jsPDF from "jspdf"
@@ -106,6 +104,8 @@ const stateCoordinates: { [key: string]: { lat: number; lng: number; name: strin
 }
 
 export default function BusinessPlanDashboard() {
+  const router = useRouter()
+
   // Tab access control (must be first in function)
   const allTabs = [
     { key: 'business-plan', label: 'Business Plan' },
@@ -1012,7 +1012,7 @@ export default function BusinessPlanDashboard() {
               {tab.label}
             </TabsTrigger>
           ))}
-          <div className="ml-auto flex items-center">
+          <div className="ml-auto">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -1035,38 +1035,35 @@ export default function BusinessPlanDashboard() {
                   Upload CSV
                 </DropdownMenuItem>
                 {isAdmin && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/k12-strategy/admin" className="flex items-center gap-2">
-                      <Settings2 className="w-4 h-4" />
-                      Admin
-                    </Link>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault()
+                      router.push("/k12-strategy/admin")
+                    }}
+                  >
+                    <Settings2 className="w-4 h-4" />
+                    Admin
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="flex items-center gap-2">
-                    <FileDown className="w-4 h-4" />
-                    Export PDF
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent alignOffset={-4} className="w-52">
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault()
-                        handleExportCurrentTabPDF()
-                      }}
-                    >
-                      Current tab
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault()
-                        handleExportAllTabsPDF()
-                      }}
-                    >
-                      All tabs
-                    </DropdownMenuItem>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault()
+                    handleExportCurrentTabPDF()
+                  }}
+                >
+                  <FileDown className="w-4 h-4" />
+                  Export current tab
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={(event) => {
+                    event.preventDefault()
+                    handleExportAllTabsPDF()
+                  }}
+                >
+                  <FileDown className="w-4 h-4" />
+                  Export all tabs
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
