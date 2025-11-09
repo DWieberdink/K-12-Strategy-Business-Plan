@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useState, useMemo, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, MapPin, ChevronsUpDown, ChevronDown } from "lucide-react"
+import { Upload, MapPin, ChevronsUpDown, ChevronDown, MoreHorizontal, FileDown, Settings2 } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -33,6 +33,9 @@ import {
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu"
 import Link from 'next/link'
 import jsPDF from "jspdf"
@@ -134,6 +137,7 @@ export default function BusinessPlanDashboard() {
   const [isUsingCsvData, setIsUsingCsvData] = useState(false)
   const [showMonthlyExpenses, setShowMonthlyExpenses] = useState(false)
   const [startingCash, setStartingCash] = useState(300000)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Original chart states
   const [sortBy, setSortBy] = useState<"fee" | "date" | "name">("fee")
@@ -982,6 +986,13 @@ export default function BusinessPlanDashboard() {
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8 pb-16">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
       <Tabs
         value={mainTab}
         onValueChange={(value) => setMainTab(value as 'business-plan' | 'financial' | 'strategy' | 'project-performance')}
