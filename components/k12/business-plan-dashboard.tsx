@@ -981,17 +981,21 @@ export default function BusinessPlanDashboard() {
   }
 
   return (
-    <div className="w-full h-full space-y-6 px-4 md:px-8 pb-24 md:pb-8">
-      <Tabs value={mainTab} onValueChange={(value) => setMainTab(value as 'business-plan' | 'financial' | 'strategy' | 'project-performance')} className="h-full flex flex-col">
-        <TabsList className="flex w-full mb-6 gap-1 items-center flex-wrap overflow-visible bg-white border-b border-gray-200 h-14 min-h-[56px] px-0 rounded-none">
+    <div className="w-full max-w-7xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8 pb-16">
+      <Tabs
+        value={mainTab}
+        onValueChange={(value) => setMainTab(value as 'business-plan' | 'financial' | 'strategy' | 'project-performance')}
+        className="h-full flex flex-col rounded-3xl border border-border bg-background shadow-sm"
+      >
+        <TabsList className="flex w-full mb-6 gap-1 items-center flex-wrap overflow-visible border-b border-border bg-muted/60 backdrop-blur-sm h-auto px-3 py-2 rounded-t-3xl">
           {/* Tab triggers */}
           {allTabs.filter(tab => allowedTabs.includes(tab.key)).map(tab => (
             <TabsTrigger
               key={tab.key}
               value={tab.key}
-              className={`min-w-[120px] md:min-w-[160px] text-sm md:text-base px-6 py-3 rounded-none transition-all duration-200 font-medium h-12 flex items-center justify-center border-b-2 border-transparent
-                data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent
-                data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-transparent
+              className={`min-w-[120px] md:min-w-[140px] px-4 py-2 text-sm md:text-base rounded-full transition-colors duration-200 font-medium
+                data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm
+                data-[state=inactive]:text-muted-foreground hover:text-primary hover:bg-background/70
               `}
             >
               {tab.label}
