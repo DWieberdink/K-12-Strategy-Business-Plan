@@ -153,7 +153,7 @@ export default function SchoolOptimizationPage() {
             <h2 className="text-3xl font-bold mb-8 text-center">Transportation & Access Analysis</h2>
             <div className="mb-8">
               <img
-                src="/Picture5.png"
+                src="/images/Picture5.png"
                 alt="Transportation access analysis showing travel routes and catchment areas from a central school location"
                 className="w-full rounded-lg shadow-lg"
               />
@@ -175,8 +175,8 @@ export default function SchoolOptimizationPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
               <div>
                 <img
-                  src="/Picture4.jpg"
-                  alt="Boston area school optimization map showing utilization zones, school locations, and transportation routes"
+                  src="/images/Picture4.jpg"
+                  alt="Regional analysis showing school locations, utilization zones, and transportation networks"
                   className="w-full rounded-lg shadow-lg"
                 />
                 <p className="text-center text-sm text-muted-foreground mt-4">
@@ -185,7 +185,7 @@ export default function SchoolOptimizationPage() {
               </div>
               <div>
                 <img
-                  src="/MPSImage.png"
+                  src="/images/MPSImage.png"
                   alt="Milwaukee elementary schools map showing school locations, service areas, and optimization scenarios"
                   className="w-full rounded-lg shadow-lg"
                 />

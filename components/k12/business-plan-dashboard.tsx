@@ -270,13 +270,31 @@ export default function BusinessPlanDashboard() {
       // Ensure project.name is always a string
       const projectName = project.name || project.Project_Name || project.detail_Name || "Unknown Project"
 
+      // Get quarter with year for dateAwarded
+      let quarterWithYear = ""
+      if (project.dateAwarded) {
+        const date = new Date(project.dateAwarded)
+        const year = date.getFullYear()
+        const quarter = getQuarter(project.dateAwarded)
+        quarterWithYear = `${quarter} ${year}`
+      }
+
+      // Create label with quarter when sorting by date
+      let displayLabel = projectName.length > 25 ? projectName.substring(0, 25) + "..." : projectName
+      if (sortBy === "date" && quarterWithYear) {
+        const maxLength = 20
+        const truncatedName = displayLabel.length > maxLength ? displayLabel.substring(0, maxLength) + "..." : displayLabel
+        displayLabel = `${truncatedName} (${quarterWithYear})`
+      }
+
       return {
         ...project,
         name: projectName, // Ensure name is always set
-        shortName: projectName.length > 25 ? projectName.substring(0, 25) + "..." : projectName,
+        shortName: displayLabel,
         feeFormatted: `$${(project.totalFee / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`,
         projectStatus,
         statusColor,
+        quarterWithYear,
         hasStarted: startDate <= today,
         isCompleted: endDate <= today,
       }
@@ -1736,7 +1754,13 @@ export default function BusinessPlanDashboard() {
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={processedData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
                             <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="shortName" angle={-45} textAnchor="end" height={120} fontSize={12} />
+                            <XAxis 
+                              dataKey="shortName" 
+                              angle={-45} 
+                              textAnchor="end" 
+                              height={120} 
+                              fontSize={12}
+                            />
                             <YAxis tickFormatter={(value) => `$${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`} fontSize={12} />
                             <ChartTooltip
                               content={({ active, payload, label }) => {
@@ -1745,6 +1769,9 @@ export default function BusinessPlanDashboard() {
                                   return (
                                     <div className="bg-background border rounded-lg p-3 shadow-lg">
                                       <p className="font-semibold">{data.name}</p>
+                                      {data.quarterWithYear && (
+                                        <p className="text-sm font-medium text-primary">Quarter: {data.quarterWithYear}</p>
+                                      )}
                                       <p className="text-sm text-muted-foreground">State: {data.state}</p>
                                       <p className="text-sm text-muted-foreground">Start: {data.startDate}</p>
                                       <p className="text-sm text-muted-foreground">End: {data.endDate}</p>
