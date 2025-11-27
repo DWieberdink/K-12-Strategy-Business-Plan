@@ -744,6 +744,34 @@ export default function BusinessPlanDashboard() {
     console.log('Reset to default data')
   }
 
+  // Load local CSV file on component mount
+  useEffect(() => {
+    const loadLocalCSV = async () => {
+      try {
+        const response = await fetch('/api/projectlist')
+        if (!response.ok) {
+          console.warn('Could not load local CSV file, using default data')
+          return
+        }
+        const csvText = await response.text()
+        const parsedData = parseCSV(csvText)
+        
+        if (parsedData && parsedData.length > 0) {
+          setCsvData(parsedData)
+          setIsUsingCsvData(true)
+          console.log('Local CSV data loaded successfully:', parsedData.length, 'projects')
+        } else {
+          console.warn('Local CSV parsing returned empty data, falling back to default')
+        }
+      } catch (error) {
+        console.error("Error loading local CSV file:", error)
+        // Silently fall back to default data
+      }
+    }
+
+    loadLocalCSV()
+  }, [])
+
   const handleStateClick = (state: string) => {
     setFilterState([state])
     setChartViewType("projects")

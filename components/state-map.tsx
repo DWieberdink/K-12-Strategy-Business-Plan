@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import * as d3 from 'd3'
 import { stateCoordinates } from "@/lib/data-processing"
+import { Spinner } from "@/components/ui/spinner"
 
 interface StateMapProps {
   projects: any[]
@@ -9,10 +10,22 @@ interface StateMapProps {
 
 export const StateMap = ({ projects, onStateClick }: StateMapProps) => {
   const mapRef = useRef<HTMLDivElement>(null)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadMap = () => {
       if (!mapRef.current) return
+
+      // Clear any existing timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+
+      setIsLoading(true)
+      setError(null)
 
       // Clear previous content
       d3.select(mapRef.current).selectAll("*").remove()
@@ -30,10 +43,27 @@ export const StateMap = ({ projects, onStateClick }: StateMapProps) => {
       // Create projection
       const projection = d3.geoAlbersUsa()
 
-      // Load US states GeoJSON
+      // Load US states GeoJSON with timeout
+      timeoutRef.current = setTimeout(() => {
+        setIsLoading(false)
+        setError("Map loading timeout. Please refresh the page.")
+        timeoutRef.current = null
+      }, 10000) // 10 second timeout
+
       fetch('/USStates1.geojson')
-        .then(response => response.json())
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Failed to load map data: ${response.status}`)
+          }
+          return response.json()
+        })
         .then(usStates => {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current)
+            timeoutRef.current = null
+          }
+          // Clear any error state since fetch succeeded
+          setError(null)
           // Fit the projection to the actual features
           projection.fitSize([width, height], usStates)
 
@@ -139,9 +169,17 @@ export const StateMap = ({ projects, onStateClick }: StateMapProps) => {
             .attr("dy", "0.35em")
             .style("font-size", "10px")
             .text((d) => `$${(d / 1000).toFixed(0)}K`)
+
+          setIsLoading(false)
         })
         .catch(error => {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current)
+            timeoutRef.current = null
+          }
           console.error("Error loading map data:", error)
+          setError("Failed to load map data. Please refresh the page.")
+          setIsLoading(false)
         })
     }
 
@@ -155,11 +193,34 @@ export const StateMap = ({ projects, onStateClick }: StateMapProps) => {
     }
 
     window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
   }, [projects, onStateClick])
 
   return (
-    <div ref={mapRef} className="w-full h-96 border rounded-lg overflow-hidden" />
+    <div className="w-full h-96 border rounded-lg overflow-hidden relative">
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+          <div className="flex flex-col items-center gap-2">
+            <Spinner className="h-8 w-8" />
+            <p className="text-sm text-muted-foreground">Loading map...</p>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+          <div className="text-center p-4">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        </div>
+      )}
+      <div ref={mapRef} className="w-full h-full" />
+    </div>
   )
 }
 
