@@ -35,7 +35,7 @@ export default function EducationalAdequacyPage() {
               </div>
               <div className="order-1 lg:order-2 lg:col-span-1">
                 <h2 className="text-3xl font-bold mb-6">Multi-Dimensional Assessment Framework</h2>
-                <p className="text-muted-foreground mb-6 leading-relaxed">
+                <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
                   Our educational adequacy assessments evaluate multiple categories including classroom quality, safety and
                   security, presence, assembly spaces, extended learning, organization, community engagement, and
                   environmental quality. The results provide a comprehensive view of how well each facility supports
@@ -52,7 +52,7 @@ export default function EducationalAdequacyPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 items-center">
               <div className="order-1 lg:order-1 lg:col-span-1">
                 <h2 className="text-3xl font-bold mb-6">Presenting Data at Different Scales</h2>
-                <p className="text-muted-foreground mb-6 leading-relaxed">
+                <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
                   Educational adequacy data can be presented at multiple scales to serve different audiences and
                   decision-making needs. From detailed classroom-level metrics to district-wide summary visualizations, we
                   create flexible reporting tools that allow stakeholders to explore data at the level of detail most
