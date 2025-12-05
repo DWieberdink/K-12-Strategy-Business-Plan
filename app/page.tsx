@@ -18,7 +18,7 @@ export default function HomePage() {
                 Building the Future of Educational Facilities
               </h1>
               <p className="text-lg text-primary-foreground/90 leading-relaxed">
-                We partner with school districts to understand demographic trends, assess building conditions, and
+                Partner with school districts to understand demographic trends, assess building conditions, and
                 develop strategic plans that ensure facilities support student success and program excellence.
               </p>
             </div>
