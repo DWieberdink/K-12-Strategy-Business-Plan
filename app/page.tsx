@@ -1,8 +1,9 @@
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { Card, CardContent } from "@/components/ui/card"
-import { Building2, TrendingUp, Users, Scale, Wrench } from "lucide-react"
+import { Building2, TrendingUp, Users, Scale, Wrench, Linkedin, Mail } from "lucide-react"
 import Link from "next/link"
+import Image from "next/image"
 
 export default function HomePage() {
   return (
@@ -190,14 +191,83 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* CTA Section */}
+        {/* Who are we Section */}
         <section className="py-12 bg-muted/30">
-          <div className="max-w-5xl mx-auto px-3 sm:px-4 lg:px-6 text-center">
-            <h2 className="text-3xl font-bold mb-6">Ready to Transform Your Facilities?</h2>
-            <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
-              Let's discuss how we can help your district develop a strategic facilities plan that supports student
-              success and community goals.
-            </p>
+          <div className="max-w-5xl mx-auto px-3 sm:px-4 lg:px-6">
+            <h2 className="text-3xl font-bold mb-6 text-center">Who are we</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
+              {/* Douwe Card */}
+              <Card className="bg-background">
+                <CardContent className="p-6 flex flex-col items-center text-center">
+                  <div className="relative w-40 h-40 mb-4 rounded-full overflow-hidden bg-muted">
+                    <Image
+                      src="/images/DouweHeadshot.jpg"
+                      alt="Douwe"
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                  <h3 className="text-xl font-bold mb-4">DOUWE WIEBERDINK</h3>
+                  <p className="text-base text-muted-foreground mb-6 leading-relaxed">
+                    Expert in data analytics, planning frameworks, and digital tool development. Former Campus Planner at Dartmouth College and consultant to Google's Sidewalk Labs. Former Associate Principal at Perkins Eastman, leading national and international planning and advisory projects across higher education, K–12, and civic sectors.
+                  </p>
+                  <div className="flex gap-4">
+                    <a
+                      href="https://www.linkedin.com/in/douwe-wieberdink"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80 transition-colors"
+                      aria-label="Douwe's LinkedIn"
+                    >
+                      <Linkedin className="h-5 w-5" />
+                    </a>
+                    <a
+                      href="mailto:douwe@example.com"
+                      className="text-primary hover:text-primary/80 transition-colors"
+                      aria-label="Email Douwe"
+                    >
+                      <Mail className="h-5 w-5" />
+                    </a>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Patrick Card */}
+              <Card className="bg-background">
+                <CardContent className="p-6 flex flex-col items-center text-center">
+                  <div className="relative w-40 h-40 mb-4 rounded-full overflow-hidden bg-muted">
+                    <Image
+                      src="/images/Patrick Headshot.jpg"
+                      alt="Patrick"
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                  <h3 className="text-xl font-bold mb-4">PATRICK DAVIS</h3>
+                  <p className="text-base text-muted-foreground mb-6 leading-relaxed">
+                    Former COO, DC Public Schools; Former Principal at Perkins Eastman, national leader in school facilities strategy and planning. Brings extensive experience in district operations, strategic facilities planning, and capital program management to help districts develop comprehensive strategies that balance operational needs, financial constraints, and community priorities.
+                  </p>
+                  <div className="flex gap-4">
+                    <a
+                      href="https://www.linkedin.com/in/patrick"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80 transition-colors"
+                      aria-label="Patrick's LinkedIn"
+                    >
+                      <Linkedin className="h-5 w-5" />
+                    </a>
+                    <a
+                      href="mailto:patrick@example.com"
+                      className="text-primary hover:text-primary/80 transition-colors"
+                      aria-label="Email Patrick"
+                    >
+                      <Mail className="h-5 w-5" />
+                    </a>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </section>
       </main>
